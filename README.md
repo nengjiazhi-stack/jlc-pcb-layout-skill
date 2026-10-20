@@ -30,7 +30,7 @@
 ### 方式一：脚本安装（推荐）
 
 ```bash
-git clone https://github.com/<your-name>/jlc-pcb-layout-skill.git
+git clone https://github.com/nengjiazhi-stack/jlc-pcb-layout-skill.git
 cd jlc-pcb-layout-skill
 bash install.sh          # macOS / Linux / Git Bash
 ```
