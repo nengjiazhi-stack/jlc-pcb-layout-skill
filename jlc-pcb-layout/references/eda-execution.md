@@ -109,7 +109,18 @@ const z = await eda.pcb_Drc.createNetClass('PWR', ['VDD', '3V3', 'VBUS'], '#ff00
 eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 ```
 
-**关于自动布线**：`eda.pcb_Document.autoRouting(props)` 在 EDA v3.2.150 / v4.1.66 之后才有，且内部有 900 秒硬上限；老版本该函数为 `undefined`。**先探测** `typeof eda.pcb_Document?.autoRouting === 'function'`，没有就走逐段布线或文件交换式自动布线。自动布线的结果**必须逐网络复核**（3W、45°、回流路径），不能直接交付。
+### 禁用项：自动布线 / 自动布局（不是第三条通道）
+
+专业版确实提供 `eda.pcb_Document.autoRouting(props)`（v3.2.150 / v4.1.66 之后才有，老版本是 `undefined`），**但本 skill 禁止调用**——不探测、不试探、也不找"文件交换式自动布线"之类的替代路径。走线一律 `pcb_PrimitiveLine.create` / `pcb.line.create` 逐段来。
+
+四条理由，都是现场能踩到的：
+
+1. **没有 undo。** 一次调用改动整块板，走错了撤不回来，只能靠事先 `save` 的版本回退。
+2. **无法逐段归因。** `check.py` 报 `TY-6.5.6-*` 的 3W 不足或 `AEST-ANGLE` 偏离 45° 时，你对着几千段线指不出是哪一步布错的，也就没法只重做那一段。
+3. **900 秒硬上限。** 超过就截断返回，留下一块布了一半的板子——比没布更难判断。
+4. **它不认你的判据。** 差分对、等长组、回流路径、去耦优先、功率环路面积，这些 `check.py` 要查的东西自动布线不保证，冲突时它也不会停下来问你。
+
+**唯一例外**：用户明确说"就用自动布线，别逐段画"。此时先说明上面四条，要一句明确确认，跑完把结果记进交付物的「未按规范验证项」，并照常跑 `check.py`——布通了不等于合规。
 
 ---
 
@@ -144,7 +155,7 @@ eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 | 板框不能用 `Line` | 板框层（11）必须用 Polyline/多边形 | 用 `pcb_PrimitivePolyline` 或 `pcb.outline.set` |
 | 覆铜空网 | `net` 传空串会报"参数不正确"，铺出来是死铜 | 必须传已有网络名（GND / VDD） |
 | 内层 id 猜错 | 以为 3 是内层，结果画到丝印层 | 一律从 `pcb.layers.list` 读 |
-| 停用层被静默忽略 | 自动布线 `props.layers` 传了没启用的层 | 传 `layerStatus !== NOT_USED` 的层 |
+| 停用层被静默忽略 | 往未启用的层 `create` 图元，不报错但看不见 | 先 `pcb.layers.list` 看 `layerStatus`，只往 `!== NOT_USED` 的层写 |
 | 无 undo | 删除/移动不可撤销 | 每阶段显式 `save`，破坏性操作前先问用户 |
 | 内电层顺序 | 先翻内电层类型再铺铜会掉到 L1 且 netless | 先在信号层铺铜 → 再翻 PLANE 类型 → 再 `pour rebuild` |
 | 截图滞后 | 后台窗口截图可能是旧的或全白 | 以数据校验为准（`components.list` / `drc.check`），不要把截图当验证 |
@@ -182,7 +193,7 @@ python check.py snapshot.json --min-severity WARN
 - 需要删器件、清空布线、改板框；
 - 计划里有块"放不下"（`overflow_blocks` 非空）；
 - 涉及安规间距（>60V）而你推不出电位；
-- 自动布线的结果与关键信号规则冲突（要人决定牺牲哪个）；
+- 画布上出现不是本流程创建的走线（段数暴涨、成片连通），疑似被自动布线/自动布局动过——留着还是清掉，要人决定；
 - 用户给的坐标与结构图矛盾。
 
 这五种情况**停下来问**，比"先画了再说"便宜得多。

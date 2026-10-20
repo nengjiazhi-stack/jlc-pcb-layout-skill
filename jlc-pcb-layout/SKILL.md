@@ -26,7 +26,7 @@ description: 在嘉立创EDA专业版里按客户需求做原理图、再把 PCB
 | 计算层 | 载流/间距/过孔/阻抗 + 上拉/限流/负载电容/偏置/电感 | `scripts/rules.py`、`scripts/schem.py calc`、`assets/constraints.json` |
 | 执行层 | 网表生成、ERC、落笔脚本、布局计划、合规检查 | `scripts/schem.py`、`scripts/plan.py`、`scripts/check.py`、`references/eda-execution.md` |
 
-## 七条硬规矩
+## 八条硬规矩
 
 1. **不许凭记忆报工艺数值**。任何"线要多宽 / 间距多少 / 过孔多大 / 爬电多少 / 器件间距多少"的问题，先跑 `rules.py`，或查 `assets/constraints.json`。查不到就说不确定，并给出保守取值 + 标注假设。
 2. **不许凭记忆报电路数值**。上拉、限流电阻、晶振负载电容、RS485 偏置、buck 电感、TVS 档位，先跑 `schem.py calc`，或查 `constraints.json → schematic`。
@@ -35,6 +35,7 @@ description: 在嘉立创EDA专业版里按客户需求做原理图、再把 PCB
 5. **不许乱序摆件**。摆器件必须按 `P0 → P6` 的档位顺序（见 `references/layout-rules.md` §11 与 `constraints.json → placement.placement_order`）：机械锁定件 → 功率热源 → 核心 IC → 就近器件（去耦/串阻/晶振）→ 敏感小信号 → 其余阻容 → 测试点/MARK/丝印。**前一档未锁定不得进入下一档。** 尤其是 P3 的就近器件，禁止为了"阵列好看"把它们从 IC 电源脚旁挪走——裁决顺序永远是**电气 > 结构 > 制造 > 整齐**。
 6. **不许把「没查」说成「通过」**。`check.py` 的 `UNKNOWN` 表示这条检查没跑成（缺 traces、缺高度、缺丝印、块级约束无几何判据）。有 UNKNOWN 时判定是 `INCOMPLETE`，**不是通过**。交付物里必须列出哪些项没查，不许只报 `FAIL 0`。
 7. **不许无验证收工**。原理图阶段必须 ERC 过 FAIL=0 且 EDA 原生 `sch_Drc` 通过；PCB 阶段必须跑 `check.py` + `drc-check`。违规逐条回修或明确记录为"已接受的风险"。
+8. **不许用自动布线 / 自动布局**。走线只能 `pcb.line.create` 逐段写；`eda.pcb_Document.autoRouting()`、EDA 菜单里的自动布线、任何 auto-route 类动作、以及"导出 DSN/SES 交给外部路由器"这类替代路线，一个都不许碰。一次调用改动整块板、EDA 没有 undo、单次最长 900 秒、报错时无法逐段归因——这四条决定了它一旦跑起来就不可控。用户明确要求时，先讲清后果、拿到确认，再记进交付物的「未按规范验证项」。
 
 ## 先判断任务模式
 
@@ -150,7 +151,7 @@ python scripts/plan.py assets/plan.example.json -o my_plan.json --emit-steps ste
 
 - 每摆完一个功能块就 `pcb.components.list --include-bbox` 回读一次，确认位置真的落上去了。
 - 每次只做一类操作，做完立刻验证。EDA 没有 undo。
-- 走线用 `pcb.line.create`，一段一段来，`net` 必须写对网络名（从 `pcb.nets.list` 取，别拼）。
+- 走线用 `pcb.line.create`，一段一段来，`net` 必须写对网络名（从 `pcb.nets.list` 取，别拼）。**不要用自动布线**，理由见 `references/eda-execution.md` §1 的「禁用项」。
 - 铺铜 `net` 不能为空（空网 = 死铜）。
 - 多步批量别写 shell 胶水，写成 playbook 先 `easyeda apply steps.json --dry-run`。
 
@@ -338,7 +339,8 @@ python scripts/schem.py chips                                                   
 
 - 不擅自删器件、不擅自清空布线、不擅自改板框 —— 这三类先问。
 - 不在 `.epro`/工程文件层面做二进制修改，一切通过 API/CLI。
-- 不把"自动布线跑通了"当成"布好了"：自动布线的结果必须逐网络看 3W、45°、回流路径。
+- **不调用任何自动布线 / 自动布局功能。** 包括 `eda.pcb_Document.autoRouting()`、EDA 菜单里的"自动布线"、CLI 里任何 auto-route 类动作，也不要去找"文件交换式自动布线"之类的替代路线。走线只能 `pcb.line.create` 逐段写。理由：一次调用动整块板而 EDA 没有 undo；单次最长跑到 900 秒，超时留下一半布通的板；出问题无法逐段归因，`check.py` 报 3W/45° 时你指不出是哪一步错。用户明确要求"就用自动布线"时，先说明上述后果并要一句确认，再写进交付物的「未按规范验证项」。
+- **画布上出现不是本流程创建的走线就停下。** 判定特征：段数远超计划、成片网络一次性连上、走线绕过你摆的坐标。这说明有人（或上一轮的你）跑过自动布线或自动布局，**不要在污染的画布上继续改**——先问用户是留还是清。
 - 不虚构 DRC 结果。没跑就是没跑。
 - **不编 LCSC 料号**。没有料号就停在选型，`playbook` 会拒绝生成脚本——不要把 `--allow-missing` 当绕过手段。
 - 不绕过 ERC 的 FAIL 直接落笔。真要先看效果，就把 FAIL 逐条写进交付物并标注"未修复"。
