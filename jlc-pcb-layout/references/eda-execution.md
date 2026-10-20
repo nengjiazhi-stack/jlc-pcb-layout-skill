@@ -168,6 +168,7 @@ eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 1. **几何**：`pcb.components.list --include-bbox` 回读坐标，与计划文件逐条 diff（允许 ±1mil 网格误差）。
 2. **规则**：`python check.py <snapshot>` 跑规范库；`pcb.drc.check` 跑 EDA 原生 DRC。两者都要过——规范库管"规范级"问题（去耦距离、边距带、朝向、3W、直角），DRC 管"电气级"问题（间距、短路、未布通）。
 3. **布线质量**：`pcb.report` 看每网络长度、差分 skew、等长组 spread。
+4. **画布归属**：布线前存 `pcb.line.list` 基线，布完比增量（按连通 primitiveId 集合，不按段数——EDA 会在交点处自动切段）。对不上就是有非本流程的走线，先停下问，别在别人的结果上继续改。
 
 ```bash
 easyeda pcb components-list --include-bbox --json > comps.json     # 参数名以 easyeda actions 为准

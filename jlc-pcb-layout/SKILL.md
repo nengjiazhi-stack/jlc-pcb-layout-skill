@@ -152,6 +152,7 @@ python scripts/plan.py assets/plan.example.json -o my_plan.json --emit-steps ste
 - 每摆完一个功能块就 `pcb.components.list --include-bbox` 回读一次，确认位置真的落上去了。
 - 每次只做一类操作，做完立刻验证。EDA 没有 undo。
 - 走线用 `pcb.line.create`，一段一段来，`net` 必须写对网络名（从 `pcb.nets.list` 取，别拼）。**不要用自动布线**，理由见 `references/eda-execution.md` §1 的「禁用项」。
+- **布线前先记基线，布完对增量。** 动手前跑一次 `easyeda pcb line list --json > lines.before.json`（子命令以 `easyeda actions` 为准），记下段数与网络集合。布完再数一次：增量应当等于你实际 `create` 的段数——EDA 会在交点处自动分段，所以按**连通 primitiveId 集合**比，别死比段数。增量对不上 = 有别的进程或上一轮动过画布，按红线停下来问。
 - 铺铜 `net` 不能为空（空网 = 死铜）。
 - 多步批量别写 shell 胶水，写成 playbook 先 `easyeda apply steps.json --dry-run`。
 
