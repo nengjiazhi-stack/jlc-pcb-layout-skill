@@ -1,0 +1,507 @@
+{
+  "_comment": [
+    "回修后的版本（对照 examples/snapshot.demo.json）：修掉 VDD×GND 短路、两处直角、过孔孔径 10→12mil、",
+    "C8 从 407mil 拉到 237mil、USB 差分间距 25→35mil。FAIL 归零，但仍有 WARN —— 那是故意的：",
+    "剩下的 WARN 要么是还没布完的线头，要么是必须由人决定怎么绕的冲突，检查器不会替你把它变绿。",
+    "用法：python scripts/check.py examples/snapshot.demo.fixed.json --min-severity WARN"
+  ],
+  "board": {
+    "width_mil": 2362,
+    "height_mil": 1772,
+    "copper_layers": 4,
+    "thickness_mm": 1.6,
+    "wave_solder": false
+  },
+  "components": [
+    {
+      "designator": "U1",
+      "layer": 1,
+      "x": 1300,
+      "y": 1000,
+      "rotation": 0,
+      "w": 200,
+      "h": 200,
+      "footprint": "QFN-32_5x5",
+      "bga": false,
+      "pads": [
+        {
+          "num": "1",
+          "net": "VDD",
+          "x": 1230,
+          "y": 1085
+        },
+        {
+          "num": "2",
+          "net": "GND",
+          "x": 1260,
+          "y": 1085
+        },
+        {
+          "num": "3",
+          "net": "USB_DP",
+          "x": 1290,
+          "y": 1085
+        },
+        {
+          "num": "4",
+          "net": "USB_DM",
+          "x": 1315,
+          "y": 1085
+        },
+        {
+          "num": "5",
+          "net": "XTAL1",
+          "x": 1215,
+          "y": 1050
+        },
+        {
+          "num": "6",
+          "net": "RST",
+          "x": 1215,
+          "y": 1000
+        }
+      ]
+    },
+    {
+      "designator": "Y1",
+      "layer": 1,
+      "x": 1250,
+      "y": 1200,
+      "rotation": 0,
+      "w": 125,
+      "h": 100,
+      "footprint": "HC-49",
+      "pads": [
+        {
+          "num": "1",
+          "net": "XTAL1",
+          "x": 1210,
+          "y": 1200
+        },
+        {
+          "num": "2",
+          "net": "XTAL2",
+          "x": 1290,
+          "y": 1200
+        }
+      ]
+    },
+    {
+      "designator": "C8",
+      "layer": 1,
+      "x": 1345,
+      "y": 1300,
+      "rotation": 0,
+      "w": 50,
+      "h": 25,
+      "footprint": "0402",
+      "pads": [
+        {
+          "num": "1",
+          "net": "VDD",
+          "x": 1330,
+          "y": 1300
+        },
+        {
+          "num": "2",
+          "net": "GND",
+          "x": 1360,
+          "y": 1300
+        }
+      ]
+    },
+    {
+      "designator": "U2",
+      "layer": 1,
+      "x": 550,
+      "y": 775,
+      "rotation": 0,
+      "w": 125,
+      "h": 75,
+      "footprint": "SOT-23-5",
+      "pads": [
+        {
+          "num": "1",
+          "net": "VIN",
+          "x": 525,
+          "y": 760
+        },
+        {
+          "num": "2",
+          "net": "GND",
+          "x": 550,
+          "y": 800
+        },
+        {
+          "num": "3",
+          "net": "VDD",
+          "x": 575,
+          "y": 760
+        }
+      ]
+    },
+    {
+      "designator": "C1",
+      "layer": 1,
+      "x": 700,
+      "y": 775,
+      "rotation": 0,
+      "w": 75,
+      "h": 50,
+      "footprint": "0603",
+      "pads": [
+        {
+          "num": "1",
+          "net": "VDD",
+          "x": 685,
+          "y": 775
+        },
+        {
+          "num": "2",
+          "net": "GND",
+          "x": 715,
+          "y": 775
+        }
+      ]
+    },
+    {
+      "designator": "C2",
+      "layer": 1,
+      "x": 550,
+      "y": 875,
+      "rotation": 0,
+      "w": 75,
+      "h": 50,
+      "footprint": "0603",
+      "pads": [
+        {
+          "num": "1",
+          "net": "VIN",
+          "x": 535,
+          "y": 875
+        },
+        {
+          "num": "2",
+          "net": "GND",
+          "x": 565,
+          "y": 875
+        }
+      ]
+    },
+    {
+      "designator": "C3",
+      "layer": 1,
+      "x": 650,
+      "y": 875,
+      "rotation": 0,
+      "w": 50,
+      "h": 25,
+      "footprint": "0402",
+      "pads": [
+        {
+          "num": "1",
+          "net": "VDD",
+          "x": 635,
+          "y": 875
+        },
+        {
+          "num": "2",
+          "net": "GND",
+          "x": 665,
+          "y": 875
+        }
+      ]
+    },
+    {
+      "designator": "D1",
+      "layer": 1,
+      "x": 600,
+      "y": 650,
+      "rotation": 0,
+      "w": 175,
+      "h": 100,
+      "footprint": "SMA",
+      "pads": [
+        {
+          "num": "1",
+          "net": "VIN",
+          "x": 530,
+          "y": 650
+        },
+        {
+          "num": "2",
+          "net": "VIN",
+          "x": 670,
+          "y": 650
+        }
+      ]
+    },
+    {
+      "designator": "J1",
+      "layer": 1,
+      "x": 225,
+      "y": 875,
+      "rotation": 90,
+      "w": 350,
+      "h": 300,
+      "footprint": "USB-C-16P",
+      "pads": [
+        {
+          "num": "A4",
+          "net": "VIN",
+          "x": 300,
+          "y": 875
+        },
+        {
+          "num": "A1",
+          "net": "GND",
+          "x": 300,
+          "y": 835
+        }
+      ]
+    },
+    {
+      "designator": "J2",
+      "layer": 1,
+      "x": 1950,
+      "y": 800,
+      "rotation": 90,
+      "w": 400,
+      "h": 100,
+      "footprint": "HDR-2x5",
+      "pads": [
+        {
+          "num": "1",
+          "net": "GND",
+          "x": 1950,
+          "y": 700
+        },
+        {
+          "num": "2",
+          "net": "VDD",
+          "x": 1950,
+          "y": 650
+        }
+      ]
+    },
+    {
+      "designator": "H1",
+      "layer": 1,
+      "x": 225,
+      "y": 225,
+      "rotation": 0,
+      "w": 350,
+      "h": 350,
+      "footprint": "M3"
+    },
+    {
+      "designator": "H2",
+      "layer": 1,
+      "x": 2125,
+      "y": 225,
+      "rotation": 0,
+      "w": 350,
+      "h": 350,
+      "footprint": "M3"
+    },
+    {
+      "designator": "H3",
+      "layer": 1,
+      "x": 225,
+      "y": 1525,
+      "rotation": 0,
+      "w": 350,
+      "h": 350,
+      "footprint": "M3"
+    },
+    {
+      "designator": "H4",
+      "layer": 1,
+      "x": 2125,
+      "y": 1525,
+      "rotation": 0,
+      "w": 350,
+      "h": 350,
+      "footprint": "M3"
+    }
+  ],
+  "holes": [
+    {
+      "x": 225,
+      "y": 225,
+      "keepout_mil": 169,
+      "spec": "M3"
+    },
+    {
+      "x": 2125,
+      "y": 225,
+      "keepout_mil": 169,
+      "spec": "M3"
+    },
+    {
+      "x": 225,
+      "y": 1525,
+      "keepout_mil": 169,
+      "spec": "M3"
+    },
+    {
+      "x": 2125,
+      "y": 1525,
+      "keepout_mil": 169,
+      "spec": "M3"
+    }
+  ],
+  "traces": [
+    {
+      "net": "VIN",
+      "layer": 1,
+      "x1": 300,
+      "y1": 875,
+      "x2": 530,
+      "y2": 875,
+      "width": 25
+    },
+    {
+      "net": "VIN",
+      "layer": 1,
+      "x1": 530,
+      "y1": 650,
+      "x2": 525,
+      "y2": 760,
+      "width": 25
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 575,
+      "y1": 760,
+      "x2": 575,
+      "y2": 845,
+      "width": 20
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 575,
+      "y1": 845,
+      "x2": 605,
+      "y2": 875,
+      "width": 20
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 605,
+      "y1": 875,
+      "x2": 635,
+      "y2": 875,
+      "width": 20
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 635,
+      "y1": 875,
+      "x2": 700,
+      "y2": 810,
+      "width": 20
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 700,
+      "y1": 810,
+      "x2": 700,
+      "y2": 775,
+      "width": 20
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 1230,
+      "y1": 1085,
+      "x2": 1230,
+      "y2": 1270,
+      "width": 12
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 1230,
+      "y1": 1270,
+      "x2": 1260,
+      "y2": 1300,
+      "width": 12
+    },
+    {
+      "net": "VDD",
+      "layer": 1,
+      "x1": 1260,
+      "y1": 1300,
+      "x2": 1330,
+      "y2": 1300,
+      "width": 12
+    },
+    {
+      "net": "USB_DP",
+      "layer": 1,
+      "x1": 1290,
+      "y1": 1085,
+      "x2": 1290,
+      "y2": 900,
+      "width": 10
+    },
+    {
+      "net": "USB_DM",
+      "layer": 1,
+      "x1": 1325,
+      "y1": 1085,
+      "x2": 1325,
+      "y2": 900,
+      "width": 10
+    },
+    {
+      "net": "XTAL1",
+      "layer": 1,
+      "x1": 1215,
+      "y1": 1050,
+      "x2": 1210,
+      "y2": 1200,
+      "width": 10
+    },
+    {
+      "net": "XTAL2",
+      "layer": 1,
+      "x1": 1290,
+      "y1": 1200,
+      "x2": 1290,
+      "y2": 1120,
+      "width": 10
+    },
+    {
+      "net": "RST",
+      "layer": 1,
+      "x1": 1215,
+      "y1": 1000,
+      "x2": 1100,
+      "y2": 1000,
+      "width": 10
+    }
+  ],
+  "vias": [
+    {
+      "net": "GND",
+      "x": 1300,
+      "y": 1085,
+      "hole": 12,
+      "diameter": 25
+    },
+    {
+      "net": "GND",
+      "x": 605,
+      "y": 875,
+      "hole": 12,
+      "diameter": 25
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "_comment": [
+    "示例：60 x 45 mm 四层小板（USB 供电 + MCU + 排针 IO）",
+    "宽度/高度用 mm，坐标与尺寸也用它更好写（脚本内部统一换算成 mil）",
+    "edge: left/right/top/bottom/center —— 只影响装箱时的搜索顺序，不是硬约束",
+    "priority: 数字小的先落位（先落块 = 优先占地）",
+    "真实项目里 parts 里的 w_mm/h_mm 直接取封装 courtyard 尺寸，别用本体尺寸"
+  ],
+  "board": {
+    "width_mm": 60,
+    "height_mm": 45,
+    "corner_radius_mm": 5
+  },
+  "options": {
+    "grid_mil": 25,
+    "edge_band_mil": 80,
+    "gutter_mil": 60,
+    "part_gap_mil": 40,
+    "area_fill_factor": 1.8,
+    "scan_step_mil": 100
+  },
+  "anchors": [
+    {"designator": "J1", "x_mm": 6.0, "y_mm": 22.5, "w_mm": 9.0, "h_mm": 7.4, "rotation": 90, "layer": 1, "block": "anchor"},
+    {"designator": "H1", "x_mm": 6.0, "y_mm": 6.0, "w_mm": 8.6, "h_mm": 8.6, "rotation": 0, "layer": 1, "block": "anchor"},
+    {"designator": "H2", "x_mm": 54.0, "y_mm": 6.0, "w_mm": 8.6, "h_mm": 8.6, "rotation": 0, "layer": 1, "block": "anchor"},
+    {"designator": "H3", "x_mm": 6.0, "y_mm": 39.0, "w_mm": 8.6, "h_mm": 8.6, "rotation": 0, "layer": 1, "block": "anchor"},
+    {"designator": "H4", "x_mm": 54.0, "y_mm": 39.0, "w_mm": 8.6, "h_mm": 8.6, "rotation": 0, "layer": 1, "block": "anchor"}
+  ],
+  "blocks": [
+    {
+      "name": "power",
+      "edge": "left",
+      "priority": 1,
+      "parts": [
+        {"designator": "D1", "w_mm": 4.3, "h_mm": 2.6, "rotation": 0, "layer": 1},
+        {"designator": "U2", "w_mm": 3.0, "h_mm": 1.75, "rotation": 0, "layer": 1},
+        {"designator": "C1", "w_mm": 2.0, "h_mm": 1.25, "rotation": 0, "layer": 1},
+        {"designator": "C2", "w_mm": 2.0, "h_mm": 1.25, "rotation": 0, "layer": 1},
+        {"designator": "C3", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1}
+      ]
+    },
+    {
+      "name": "mcu",
+      "edge": "center",
+      "priority": 2,
+      "parts": [
+        {"designator": "U1", "w_mm": 5.0, "h_mm": 5.0, "rotation": 0, "layer": 1},
+        {"designator": "Y1", "w_mm": 3.2, "h_mm": 2.5, "rotation": 0, "layer": 1},
+        {"designator": "C4", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "C5", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "C6", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "C7", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "C8", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "C9", "w_mm": 1.0, "h_mm": 0.5, "rotation": 90, "layer": 1},
+        {"designator": "C10", "w_mm": 1.0, "h_mm": 0.5, "rotation": 90, "layer": 1},
+        {"designator": "C11", "w_mm": 1.6, "h_mm": 0.8, "rotation": 0, "layer": 1},
+        {"designator": "R1", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "SW1", "w_mm": 3.5, "h_mm": 3.0, "rotation": 0, "layer": 1}
+      ]
+    },
+    {
+      "name": "io",
+      "edge": "right",
+      "priority": 3,
+      "parts": [
+        {"designator": "J2", "w_mm": 10.16, "h_mm": 2.54, "rotation": 90, "layer": 1},
+        {"designator": "U3", "w_mm": 3.0, "h_mm": 1.75, "rotation": 0, "layer": 1},
+        {"designator": "R2", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1},
+        {"designator": "R3", "w_mm": 1.0, "h_mm": 0.5, "rotation": 0, "layer": 1}
+      ]
+    }
+  ]
+}

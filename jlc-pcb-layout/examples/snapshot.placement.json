@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "元器件摆放专项反面样例（60 x 45 mm / 4 层 / 1.6mm / 车规）。只读演示，不含走线。",
+    "故意埋的摆放毛病（各一条）：D 组 3 种极性朝向；同封装 IC 两种 1 脚朝向；电感挨太近且轴向同向；",
+    "高器件 T1(12mm) 紧贴矮件 C9；器件重心偏右超出半板 25%；J1 插拔净空不足；MARK 只有 2 个且未拉开。",
+    "用法：python scripts/check.py examples/snapshot.placement.json --min-severity WARN"
+  ],
+  "board": {
+    "width_mil": 2362,
+    "height_mil": 1772,
+    "copper_layers": 4,
+    "thickness_mm": 1.6,
+    "wave_solder": false,
+    "automotive": true
+  },
+  "components": [
+    {"designator": "H1", "layer": 1, "x": 225, "y": 225, "rotation": 0, "w": 350, "h": 350, "height_mm": 0, "footprint": "M3"},
+    {"designator": "H2", "layer": 1, "x": 2125, "y": 225, "rotation": 0, "w": 350, "h": 350, "height_mm": 0, "footprint": "M3"},
+    {"designator": "H3", "layer": 1, "x": 225, "y": 1525, "rotation": 0, "w": 350, "h": 350, "height_mm": 0, "footprint": "M3"},
+    {"designator": "H4", "layer": 1, "x": 2125, "y": 1525, "rotation": 0, "w": 350, "h": 350, "height_mm": 0, "footprint": "M3"},
+
+    {"designator": "J1", "layer": 1, "x": 225, "y": 875, "rotation": 90, "w": 350, "h": 300, "height_mm": 3.5, "footprint": "USB-C-16P"},
+
+    {"designator": "U1", "layer": 1, "x": 1300, "y": 700, "rotation": 0, "w": 200, "h": 200, "height_mm": 1.0, "footprint": "QFN-32_5x5"},
+    {"designator": "U2", "layer": 1, "x": 1600, "y": 700, "rotation": 90, "w": 200, "h": 200, "height_mm": 1.0, "footprint": "QFN-32_5x5"},
+
+    {"designator": "D1", "layer": 1, "x": 1250, "y": 1000, "rotation": 0, "w": 100, "h": 50, "height_mm": 1.0, "footprint": "SOD-123"},
+    {"designator": "D2", "layer": 1, "x": 1400, "y": 1000, "rotation": 90, "w": 100, "h": 50, "height_mm": 1.0, "footprint": "SOD-123"},
+    {"designator": "D3", "layer": 1, "x": 1550, "y": 1000, "rotation": 180, "w": 100, "h": 50, "height_mm": 1.0, "footprint": "SOD-123"},
+
+    {"designator": "L1", "layer": 1, "x": 560, "y": 1100, "rotation": 0, "w": 200, "h": 200, "height_mm": 8.0, "footprint": "IND-6x6"},
+    {"designator": "L2", "layer": 1, "x": 860, "y": 1300, "rotation": 0, "w": 200, "h": 200, "height_mm": 8.0, "footprint": "IND-6x6"},
+
+    {"designator": "T1", "layer": 1, "x": 1950, "y": 700, "rotation": 0, "w": 400, "h": 400, "height_mm": 12.0, "footprint": "TRF-10x10"},
+    {"designator": "C9", "layer": 1, "x": 2220, "y": 1000, "rotation": 0, "w": 50, "h": 25, "height_mm": 0.5, "footprint": "0402"},
+    {"designator": "C10", "layer": 1, "x": 2220, "y": 1100, "rotation": 0, "w": 50, "h": 25, "height_mm": 0.5, "footprint": "0402"},
+    {"designator": "C11", "layer": 1, "x": 2220, "y": 1200, "rotation": 0, "w": 50, "h": 25, "height_mm": 0.5, "footprint": "0402"},
+    {"designator": "R1", "layer": 1, "x": 2220, "y": 1280, "rotation": 0, "w": 50, "h": 25, "height_mm": 0.4, "footprint": "0402"}
+  ],
+  "holes": [
+    {"x": 225, "y": 225, "keepout_mil": 169, "spec": "M3"},
+    {"x": 2125, "y": 225, "keepout_mil": 169, "spec": "M3"},
+    {"x": 225, "y": 1525, "keepout_mil": 169, "spec": "M3"},
+    {"x": 2125, "y": 1525, "keepout_mil": 169, "spec": "M3"}
+  ],
+  "fiducials": [
+    {"x": 200, "y": 200},
+    {"x": 200, "y": 1600}
+  ]
+}

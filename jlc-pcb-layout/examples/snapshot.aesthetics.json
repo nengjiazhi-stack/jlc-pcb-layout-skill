@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "图面整洁度检查的反面样例。故意埋了 4 类毛病，用来验证 AEST-* 检查是活的：",
+    "1) C1~C5 本应排成一行，C5 的 y 偏了 22mil  → AEST-ALIGN",
+    "2) C1~C5 的 x 间距 80/80/200/200，变异系数 30% → AEST-PITCH",
+    "3) R1 旋转 37°，不在 90° 栅格上 → AEST-ROT",
+    "4) SIG1 走成 38.7°，偏离 45° 栅格 6.3° → AEST-ANGLE",
+    "",
+    "同样重要的是不该报的两处：",
+    "5) C6~C8（y=900）与 C9~C11（y=960）是交错双排，有意布局 → 不得报 AEST-ALIGN",
+    "6) SIG2 是精确垂直线 → 不得报 AEST-ANGLE",
+    "",
+    "用法：python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN"
+  ],
+  "board": {
+    "width_mil": 2000,
+    "height_mil": 1500,
+    "copper_layers": 2,
+    "thickness_mm": 1.6
+  },
+  "components": [
+    {"designator": "C1", "layer": 1, "x": 100, "y": 500, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C2", "layer": 1, "x": 180, "y": 500, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C3", "layer": 1, "x": 260, "y": 500, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C4", "layer": 1, "x": 460, "y": 500, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C5", "layer": 1, "x": 660, "y": 522, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+
+    {"designator": "C6", "layer": 1, "x": 100, "y": 900, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C7", "layer": 1, "x": 200, "y": 900, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C8", "layer": 1, "x": 300, "y": 900, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C9", "layer": 1, "x": 150, "y": 960, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C10", "layer": 1, "x": 250, "y": 960, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+    {"designator": "C11", "layer": 1, "x": 350, "y": 960, "w": 40, "h": 20, "rotation": 0, "footprint": "0402"},
+
+    {"designator": "R1", "layer": 1, "x": 1200, "y": 300, "w": 40, "h": 20, "rotation": 37, "footprint": "0402"}
+  ],
+  "traces": [
+    {"net": "SIG1", "layer": 1, "x1": 100, "y1": 200, "x2": 400, "y2": 440, "width": 10},
+    {"net": "SIG2", "layer": 1, "x1": 100, "y1": 1300, "x2": 100, "y2": 1000, "width": 10}
+  ]
+}
