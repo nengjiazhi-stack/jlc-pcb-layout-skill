@@ -1,0 +1,288 @@
+{
+  "project": "bad-demo",
+  "generated_by": "examples/netlist.bad.json —— 人为植入 8 处典型错误，用来演示 ERC",
+  "note": "这是反面样例，不要拿去投板。每一处都能在 references/schematic-rules.md 找到对应判据。",
+  "rails": [
+    {
+      "name": "VIN",
+      "v": 24.0,
+      "i_a": 1.0
+    },
+    {
+      "name": "5V",
+      "v": 5.0,
+      "i_a": 0.4
+    },
+    {
+      "name": "3V3",
+      "v": 3.3,
+      "i_a": 0.3
+    },
+    {
+      "name": "VBUS",
+      "v": 5.0,
+      "i_a": 0.5
+    }
+  ],
+  "parts": [
+    {
+      "ref": "J1",
+      "kind": "J",
+      "value": "USB-C-16P",
+      "pins": {
+        "VBUS": "VBUS",
+        "GND": "GND",
+        "CC1": "CC1",
+        "CC2": "CC2",
+        "DP": "USB_DP",
+        "DN": "USB_DN"
+      }
+    },
+    {
+      "ref": "R1",
+      "kind": "R",
+      "value": "5.1k",
+      "pins": {
+        "1": "CC1",
+        "2": "GND"
+      }
+    },
+    {
+      "ref": "U1",
+      "kind": "MCU",
+      "value": "MCU-48P",
+      "binding": "required",
+      "pins": {
+        "VDD": "3V3",
+        "VSS": "GND",
+        "NRST": "NRST",
+        "SCL": "I2C1_SCL",
+        "SDA": "I2C1_SDA"
+      }
+    },
+    {
+      "ref": "R2",
+      "kind": "R",
+      "value": "10k",
+      "pins": {
+        "1": "3V3",
+        "2": "NRST"
+      }
+    },
+    {
+      "ref": "R3",
+      "kind": "R",
+      "value": "4.7k",
+      "pins": {
+        "1": "3V3",
+        "2": "I2C1_SCL"
+      }
+    },
+    {
+      "ref": "D1",
+      "kind": "LED",
+      "value": "LED-red",
+      "pins": {
+        "A": "LED_A",
+        "K": "GND"
+      }
+    },
+    {
+      "ref": "K1",
+      "kind": "K",
+      "value": "SRD-5V",
+      "binding": "required",
+      "pins": {
+        "A1": "5V",
+        "A2": "COIL",
+        "11": "COM",
+        "14": "COM"
+      }
+    },
+    {
+      "ref": "Q1",
+      "kind": "Q",
+      "value": "S8050",
+      "pins": {
+        "B": "BASE",
+        "C": "COIL",
+        "E": "GND"
+      }
+    },
+    {
+      "ref": "R4",
+      "kind": "R",
+      "value": "10k",
+      "pins": {
+        "1": "BASE",
+        "2": "GND"
+      }
+    },
+    {
+      "ref": "D2",
+      "kind": "TVS",
+      "value": "SMBJ12A",
+      "pins": {
+        "A": "GND",
+        "K": "VIN"
+      }
+    },
+    {
+      "ref": "U2",
+      "kind": "IC",
+      "value": "BUCK-24V",
+      "binding": "required",
+      "pins": {
+        "VIN": "VIN",
+        "GND": "GND"
+      }
+    },
+    {
+      "ref": "C1",
+      "kind": "C",
+      "value": "100nF",
+      "pins": {
+        "1": "VDD IN",
+        "2": "GND"
+      }
+    }
+  ],
+  "nets": {
+    "3V3": {
+      "pins": [
+        "U1.VDD",
+        "R2.1",
+        "R3.1"
+      ],
+      "class": "power",
+      "voltage": 3.3
+    },
+    "5V": {
+      "pins": [
+        "K1.A1"
+      ],
+      "class": "power",
+      "voltage": 5.0
+    },
+    "BASE": {
+      "pins": [
+        "Q1.B",
+        "R4.1"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "CC1": {
+      "pins": [
+        "J1.CC1",
+        "R1.1"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "CC2": {
+      "pins": [
+        "J1.CC2"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "COIL": {
+      "pins": [
+        "K1.A2",
+        "Q1.C"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "COM": {
+      "pins": [
+        "K1.11",
+        "K1.14"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "GND": {
+      "pins": [
+        "J1.GND",
+        "R1.2",
+        "U1.VSS",
+        "D1.K",
+        "Q1.E",
+        "R4.2",
+        "D2.A",
+        "U2.GND",
+        "C1.2"
+      ],
+      "class": "ground",
+      "voltage": 0.0
+    },
+    "I2C1_SCL": {
+      "pins": [
+        "U1.SCL",
+        "R3.2"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "I2C1_SDA": {
+      "pins": [
+        "U1.SDA"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "LED_A": {
+      "pins": [
+        "D1.A"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "NRST": {
+      "pins": [
+        "U1.NRST",
+        "R2.2"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "USB_DN": {
+      "pins": [
+        "J1.DN"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "USB_DP": {
+      "pins": [
+        "J1.DP"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "VBUS": {
+      "pins": [
+        "J1.VBUS"
+      ],
+      "class": "power",
+      "voltage": 5.0
+    },
+    "VDD IN": {
+      "pins": [
+        "C1.1"
+      ],
+      "class": "signal",
+      "voltage": null
+    },
+    "VIN": {
+      "pins": [
+        "D2.K",
+        "U2.VIN"
+      ],
+      "class": "power",
+      "voltage": 24.0
+    }
+  }
+}

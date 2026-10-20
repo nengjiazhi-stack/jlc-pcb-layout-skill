@@ -387,5 +387,165 @@
       "为视觉对称切割地平面",
       "全板强制同宽同距"
     ]
+  },
+
+  "schematic": {
+    "_source": "I2C-bus specification UM10204 / USB Type-C Cable and Connector Spec R2.0 / TIA-485-A / ISO 11898-2 / IEC 61131-2 输入电平 / 器件手册通用惯例（TI·ADI·ST 参考设计）+ 嘉立创商城在售器件参数区间",
+    "_note": "原理图层的数值真源。能算的（限流/上拉/负载电容/偏置/电感）走 scripts/schem.py calc 算，算不出的查这里。本表没有的参数一律标『待选型确认』，禁止编数。",
+    "rule_id_convention": "SCH-<语义>，如 SCH-PWR-DECOUPLE / SCH-ERC-SINGLE",
+
+    "schematic_sheet": {
+      "_note": "嘉立创EDA 专业版原理图坐标系：A4 图幅，原点左下角，y 向上",
+      "unit": "10mil",
+      "a4_width": 1170,
+      "a4_height": 825,
+      "grid": 10,
+      "min_pin_stub": 20
+    },
+
+    "net_naming": {
+      "_note": "网络名会被网表、DRC、PCB 网络列表三处共用，命名错会导致 PCB 侧网络丢失或合并",
+      "allowed_regex": "^[A-Za-z0-9_+\\-/.]{1,32}$",
+      "forbidden_names": ["", "NONE", "NULL", "NC", "DNC", "?", "GND-", "VCC-"],
+      "power_prefixes": ["V", "VCC", "VDD", "VBAT", "VBUS", "+"],
+      "ground_aliases": ["GND", "AGND", "DGND", "PGND", "EARTH"],
+      "max_ground_kinds_warn": 2
+    },
+
+    "decoupling": {
+      "_note": "每颗 IC 的每个电源脚一颗 100nF；每路电源一颗 bulk。电压额定 ≥ 2× 工作电压（X7R/X5R 直流偏压降容）",
+      "cap_per_power_pin_f": 1e-7,
+      "dielectric": ["X7R", "X5R"],
+      "voltage_derating": 2.0,
+      "bulk_per_rail_f": 1e-5,
+      "bulk_per_500ma": 1,
+      "min_voltage_rating_v": 10
+    },
+
+    "i2c": {
+      "_note": "Rmin 由 VOL/IOL 决定，Rmax 由上升时间 tr≈0.847·R·Cb 决定；两者取交集成候选区",
+      "modes": {
+        "standard": {"freq_hz": 100000, "tr_max_ns": 1000},
+        "fast": {"freq_hz": 400000, "tr_max_ns": 300},
+        "fast_plus": {"freq_hz": 1000000, "tr_max_ns": 120}
+      },
+      "vol_v": 0.4,
+      "iol_a": 0.003,
+      "cb_default_pf": 200,
+      "preferred_series_ohm": [1000, 1500, 1800, 2200, 3300, 4700, 10000]
+    },
+
+    "crystal": {
+      "_note": "负载电容 C1=C2=2×(CL−Cstray)。Cstray 含 PCB 走线与引脚电容，2 层取 3pF、4 层及以上取 4~5pF",
+      "cstray_pf_2layer": 3,
+      "cstray_pf_multilayer": 5,
+      "cl_default_pf": 12,
+      "series_r_ohm_32k": 0,
+      "drive_level_warn_uw": 200
+    },
+
+    "led": {
+      "_note": "R=(Vcc−Vf)/I。Vf 随颜色/工艺变化，取 datasheet 典型值；指示灯电流 1~10mA 足够",
+      "vf_table_v": {"red": 1.9, "green": 2.1, "yellow": 2.1, "blue": 3.0, "white": 3.0, "ir": 1.2},
+      "i_default_ma": 5,
+      "i_min_ma": 0.5,
+      "power_check_mw": 100
+    },
+
+    "ldo": {
+      "_note": "Pd=(Vin−Vout)×Iout+Vin×Iq；结温 Tj=Pd×θja+Ta，θja 按封装查 datasheet，未查到时按 100℃/W 保守估",
+      "theta_ja_default_c_per_w": 100,
+      "ambient_c": 40,
+      "tj_max_c": 125,
+      "pd_warn_w": 0.5,
+      "dropout_v_default": 1.1,
+      "cin_min_f": 1e-6,
+      "cout_min_f": 1e-6
+    },
+
+    "usb_c": {
+      "_note": "UFP（受电设备）CC1/CC2 各接 5.1kΩ±5% 下拉到 GND，缺一颗就无法被 source 识别。D+/D− 建议串 0~22Ω 并就近加 ESD",
+      "rd_ohm": 5100,
+      "rd_tol_pct": 5,
+      "series_r_ohm_max": 22,
+      "esd_required": true,
+      "vbus_min_v": 4.75,
+      "vbus_max_v": 5.5
+    },
+
+    "rs485": {
+      "_note": "TIA-485-A：两端各 120Ω 终端；空闲失效保护由偏置电阻提供，Vab_idle ≥ 200mV",
+      "rt_ohm": 120,
+      "vab_idle_min_v": 0.2,
+      "bias_ohm_range": [560, 1000],
+      "tvs_required": true,
+      "common_mode_range_v": [-7, 12]
+    },
+
+    "can": {
+      "_note": "ISO 11898-2：总线两端各 120Ω；分裂终端时两半各 60Ω 中间经 4.7nF 落地",
+      "rt_ohm": 120,
+      "split_half_ohm": 60,
+      "split_cap_nf": 4.7,
+      "terminator_count_expected": 2
+    },
+
+    "relay": {
+      "_note": "三极管/MOS 驱动：Ic/Io 余量 ≥3×，基极电阻按 β_min 与饱和倍数算；线圈必须反并联续流二极管",
+      "ic_margin": 3,
+      "base_overdrive": 3,
+      "vbe_v": 0.7,
+      "diode_vr_mult": 2.0,
+      "diode_if_mult": 1.5
+    },
+
+    "adc": {
+      "_note": "SAR ADC 前级源阻抗 ≤10kΩ，采样保持误差才可控；分压后并 100nF 做电荷缓冲",
+      "max_source_ohm": 10000,
+      "filter_cap_nf": 100,
+      "min_divider_current_ua": 10
+    },
+
+    "tvs": {
+      "_note": "VRWM ≥ 1.1×工作电压（否则正常工作就漏电击穿），钳位电压 VC 必须低于被保护脚绝对最大额定值",
+      "vrwm_mult": 1.1,
+      "clamp_margin": 0.9
+    },
+
+    "mcu": {
+      "_note": "最小系统四件套：复位（10k 上拉 + 100nF 对地）、时钟（晶振+负载电容）、去耦（每电源脚 100nF）、下载口。缺任何一项 ERC 报 WARN",
+      "reset_r_ohm": 10000,
+      "reset_c_f": 1e-7,
+      "swd_pullup_ohm": 10000,
+      "boot_pull_ohm": 10000,
+      "decouple_f": 1e-7
+    },
+
+    "erc_severity": {
+      "SCH-ERC-SINGLE": "WARN",
+      "SCH-ERC-NODRIVER": "WARN",
+      "SCH-ERC-PIN-CONFLICT": "FAIL",
+      "SCH-ERC-DUP-REF": "FAIL",
+      "SCH-PWR-DECOUPLE": "WARN",
+      "SCH-PWR-BULK": "WARN",
+      "SCH-I2C-PULLUP": "WARN",
+      "SCH-MCU-RESET": "WARN",
+      "SCH-MCU-CLOCK": "WARN",
+      "SCH-XTAL-CL": "WARN",
+      "SCH-USB-CC": "FAIL",
+      "SCH-USB-ESD": "WARN",
+      "SCH-RS485-TERM": "WARN",
+      "SCH-RS485-BIAS": "WARN",
+      "SCH-CAN-TERM": "WARN",
+      "SCH-LED-RES": "FAIL",
+      "SCH-RELAY-FLYBACK": "FAIL",
+      "SCH-PWR-PROTECT": "WARN",
+      "SCH-TVX-VRWM": "FAIL",
+      "SCH-NET-NAME": "WARN",
+      "SCH-GND-KINDS": "WARN",
+      "SCH-ADC-IMP": "WARN",
+      "SCH-BINDING": "INFO",
+      "SCH-DATA": "INFO"
+    }
   }
 }

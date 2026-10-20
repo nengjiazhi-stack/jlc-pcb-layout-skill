@@ -1,28 +1,52 @@
 # jlc-pcb-layout
 
-把 6 份企业 PCB 设计规范里的量化条款，变成 AI 在**嘉立创EDA专业版**里能直接执行的三个工具：**算**、**排**、**查**。
+给 AI 用的**嘉立创EDA 专业版**硬件设计技能：从一句客户需求出发做原理图，再从网表一路做到可投板的 PCB Layout。
 
-面向 Codex / WorkBuddy 等 Agent 宿主，装上之后说一句「3A 电流在 1oz 铜上要多少线宽」或「帮我把这块板摆一下」，它会去跑脚本查数值、出坐标计划、跑合规检查，而不是凭记忆编数字。
+面向 Codex / WorkBuddy 等 Agent 宿主。装上之后说「客户要个 4 路继电器控制板，24V 供电，带 485」或者「3A 电流在 1oz 铜上要多少线宽」，它会去跑脚本出网表、查规范数值、生成坐标计划、跑检查器，而不是凭记忆编数字和料号。
 
 ---
 
-## 它解决什么
-
-让模型画 PCB，最常见的三种翻车方式：
-
-| 翻车方式 | 表现 | 这里的对策 |
-|---|---|---|
-| 凭记忆报数值 | 「线宽 1mm 大概够 2A 吧」 | 所有数值走 `rules.py`，查不到就说不确定并给保守值 |
-| 凭感觉摆坐标 | 即兴 `x = 1000`，摆完发现去耦电容离 IC 3cm | 坐标只能来自 `plan.py` 出的计划文件，可追溯 |
-| 无验证收工 | 「已完成布局」，实际 DRC 一堆错 | 必须跑 `check.py` + 原生 DRC，违规逐条回修或明确记为已接受风险 |
-
-## 三层结构
+## 两块能力
 
 ```
-规范层  references/        6 份规范逐页转写，按条款号索引（TY- / EM- / BELL- / ASUS-）
-计算层  scripts/rules.py   载流线宽 / 电气间距 / 过孔 / 层数 / 线宽间距档位 / 阻抗
-执行层  scripts/plan.py    布局坐标计划生成器
-        scripts/check.py   33 条规则的符合性检查器
+客户需求 ──schem.py──► 网表 ──ERC──► 落笔原理图 ──► 导入PCB ──plan.py──► 布局计划 ──► 走线 ──check.py──► 投板
+           原理图                     ↑ 不合规停在这                            PCB Layout
+```
+
+| | 原理图 | PCB Layout |
+|---|---|---|
+| 输入 | 客户功能描述 | 网表 + 板框约束 |
+| 核心工具 | `schem.py`（spec/netlist/erc/bom/bind/playbook） | `plan.py` + `check.py` |
+| 规则库 | 15 个功能块 + 23 条 ERC | 6 套企业规范 + 33 条 DRC/DFM 规则 |
+| 数值 | 上拉/限流/负载电容/偏置/电感/TVS 档位 | 载流线宽/电气间距/过孔/叠层/阻抗 |
+| 落笔 | `eda.sch_*` API | `easyeda` CLI + `eda.pcb_*` API |
+
+## 它解决什么
+
+让模型做硬件设计，六种典型翻车：
+
+| 翻车 | 表现 | 这里的对策 |
+|---|---|---|
+| 凭记忆报工艺数值 | 「线宽 1mm 大概够 2A 吧」 | 所有数值走 `rules.py`，查不到就说不确定并给保守值 |
+| 凭记忆报电路数值 | 「I2C 上拉 4.7k 是标准值」 | 走 `schem.py calc`：400kHz/200pF 时上限只有 1.8k，4.7k 超了 |
+| 编料号 | 「用 STM32F103C8T6，立创编号 C8734」——编号是猜的 | **脚本强制门禁**：没填 `lcsc` 就拒绝生成落笔代码 |
+| 漏必接外围 | 继电器不并续流二极管、Type-C 只接一颗 CC 电阻 | 功能块自带外围，ERC 专查这四类（FAIL 级） |
+| 凭感觉摆坐标 | 即兴 `x = 1000`，摆完发现去耦电容离 IC 3cm | 坐标只能来自 `plan.py` 的计划文件 |
+| 无验证收工 | 「已完成」，实际 DRC 一堆错 | 必须跑 `erc`/`check.py` + 原生 DRC + 网表比对 |
+
+## 结构
+
+```
+需求层  references/schematic-workflow.md   澄清清单 / 五步流水线 / 三道门禁
+电路层  assets/circuit-blocks.json         15 个功能块的可执行定义
+        references/circuit-blocks.md       每块"为什么这么接 + 常见错误"
+规则层  references/schematic-rules.md      23 条 ERC 判据 + 数值表
+        references/layout-rules.md 等      6 份企业规范转写（TY- / EM- / BELL- / ASUS-）
+计算层  scripts/schem.py                   11 个电路计算器
+        scripts/rules.py                   载流/间距/过孔/层数/阻抗
+执行层  scripts/plan.py                    布局坐标计划生成器
+        scripts/check.py                   PCB 合规检查器（33 个规则号）
+        references/eda-execution.md        两套 API 的落笔顺序与坑
 ```
 
 ## 安装
@@ -39,7 +63,7 @@ bash install.sh          # macOS / Linux / Git Bash
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-脚本会装到 `~/.codex/skills/jlc-pcb-layout`，并同步一份到 `~/.workbuddy/skills/`。重复执行是幂等的（先删旧再拷）。
+脚本装到 `~/.codex/skills/jlc-pcb-layout`，并同步一份到 `~/.workbuddy/skills/`。重复执行是幂等的（先删旧再拷）。
 
 ### 方式二：手动复制
 
@@ -49,41 +73,72 @@ cp -r jlc-pcb-layout ~/.codex/skills/jlc-pcb-layout
 
 ### 方式三：把 zip 丢给 Agent
 
-把 `jlc-pcb-layout-skill.zip` 拖进 Codex 对话框，`INSTALL.md` 开头是直接写给 Agent 的安装指令，它会自己解压、安装、跑自检。
+下载 Releases 里的 `jlc-pcb-layout-skill.zip` 拖进 Codex 对话框，`INSTALL.md` 开头是写给 Agent 的安装指令，它会自己解压、安装、跑自检。
 
-> **装完必须完全退出宿主进程再重开**（关窗口不算）。重开后 `$jlc-pcb-layout` 或直接说「帮我在嘉立创EDA里摆一下这块板」即可命中。
+> **装完必须完全退出宿主进程再重开**（关窗口不算）。重开后 `$jlc-pcb-layout` 或直接说「帮我按需求做块板」即可命中。
 
 ## 自检
 
 ```bash
 cd ~/.codex/skills/jlc-pcb-layout
+python scripts/schem.py netlist examples/spec.example.json -o n.json --report
+python scripts/schem.py erc examples/netlist.example.json
+python scripts/schem.py erc examples/netlist.bad.json
 python scripts/rules.py width --current 3 --copper 1oz
-python scripts/plan.py assets/plan.example.json -o /tmp/p.json --report
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 ```
 
 期望输出：
 
 ```
-需求：3.0A / 1oz / ΔT=10.0℃
-最小线宽：1.5mm (59.1mil)
-该档载流：3.2A
+器件 76（其中待绑定 16/16），网络 57，功能块 11
+
+检查结果：FAIL 0 / WARN 0 / INFO 12      ← 成品网表：结构干净，INFO 全是"待选型/GPIO 未分配"
+检查结果：FAIL 4 / WARN 15 / INFO 2      ← 反面样例：LED 无限流、线圈无续流、TVS 选小、CC 缺下拉
+
+最小线宽：1.5mm (59.1mil)   该档载流：3.2A
+检查结果：FAIL 1 / WARN 14 / INFO 3      ← demo 板：故意埋的 VDD×GND 短路
 ```
 
-```
-26 颗器件，占板 18.3%，无溢出块
-```
+**后两条 ERC 是成对的自检设计**：好的必须干净、坏的必须报错。只测前者等于没测——检查器永远返回 0 违规也能"通过"。
 
-```
-检查结果：FAIL 1 / WARN 14 / INFO 3
-[FAIL] ✗ FAB-SHORT      VDD × GND
-```
+`snapshot.demo.json` 的 FAIL 1 同样是故意埋的短路，用来演示 `check.py` 能抓到；修好的版本是 `snapshot.demo.fixed.json`（`FAIL 0 / WARN 6`）。
 
-第三条 **FAIL 1 是故意埋的**——`snapshot.demo.json` 是一块有典型毛病的示例板，用来演示检查器能抓到短路。修好的版本是 `examples/snapshot.demo.fixed.json`（`FAIL 0 / WARN 6`）。
+## 原理图部分
 
-## 规则覆盖
+### 15 个功能块
 
-`check.py` 输出 33 个规则号，分四组：
+`power_protect`（保险+TVS）、`power_ldo`、`power_buck`、`mcu_min`（复位/时钟/去耦/下载口四件套）、`usb_typec_ufp`、`rs485`、`can`、`relay_drive`、`mosfet_load`、`key`、`led_ind`、`i2c_port`、`uart_port`、`adc_divider`、`buzzer`。
+
+每个块定义的不只是"有哪些器件"，还有：必接外围、参数怎么算、常见错误、对应的 ERC 规则号。例如 `rs485` 自带失效保护偏置与可选 120Ω 终端——中间节点把 `term` 设 `false`，模块会跳过终端电阻。
+
+### 23 条 ERC
+
+| 组 | 规则 | 管什么 |
+|---|---|---|
+| 结构性 `SCH-ERC-*` | 位号重复、引脚冲突、单点悬空 | 网表本身是否自洽 |
+| 电源 `SCH-PWR-*` | 每脚去耦、每路 bulk、输入保护 | 上电能不能稳 |
+| 主控 `SCH-MCU-*` / `SCH-XTAL-CL` | 复位 RC、时钟、负载电容对称 | 能不能启动 |
+| 接口 `SCH-USB-*` / `SCH-RS485-*` / `SCH-CAN-TERM` / `SCH-I2C-PULLUP` | CC 下拉、ESD、终端、偏置、上拉 | 接口能不能通 |
+| 驱动 `SCH-LED-RES` / `SCH-RELAY-FLYBACK` | 限流、续流 | 会不会烧 |
+| 保护/采集 `SCH-TVX-VRWM` / `SCH-ADC-IMP` | TVS 档位、ADC 源阻抗 | 现场会不会死 |
+| 数据缺口 `SCH-BINDING` / `SCH-DATA` | 未选型、缺电压 | **不能当通过** |
+
+`FAIL` 是会烧或根本不动；`WARN` 是大概率出问题；`INFO` 是数据不足或已声明例外——**INFO 不等于通过**，交付时要逐条确认。
+
+### 三道门禁
+
+| 门禁 | 不过会怎样 |
+|---|---|
+| 需求缺口未列清，不许出网表 | 带着错误假设画完，返工 = 重画 |
+| ERC 有 FAIL，不许落笔 | 把会烧的电路画进 EDA |
+| 关键器件没选型，不许落笔 | 编个料号 → 批量买错料 → 整批报废 |
+
+都是 `schem.py` 里写死的返回码（`--strict` 时 WARN 也算不过），不靠自觉。
+
+## PCB 部分
+
+### 33 个规则号，四组
 
 | 组 | 规则 | 管什么 |
 |---|---|---|
@@ -92,9 +147,7 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 | 布线 `TY-6.5.6-*` | 悬空线头、直角/锐角、3W、异网短路、线宽一致性、过孔孔厚比 | 走线合不合规 |
 | 图面整洁 `AEST-*` | 共线、阵列间距、0/90/180/270、0/45/90 角度栅格 | 齐不齐 |
 
-**数据缺就降级为 `INFO` 明说「未判定」，不会假装通过。** 这是刻意的设计——`INFO` 的意思就是「这项没判，交付时要写进未解决项」。
-
-摆件顺序在 `SKILL.md` 里是硬约束（P0 机械锁定 → P1 功率热源 → P2 核心 IC → P3 就近器件 → P4 敏感小信号 → P5 其余阻容 → P6 测试点/MARK/丝印），前一档未锁定不得进入下一档。
+摆件顺序是硬约束（P0 机械锁定 → P1 功率热源 → P2 核心 IC → P3 就近器件 → P4 敏感小信号 → P5 其余阻容 → P6 测试点/MARK/丝印），前一档未锁定不得进入下一档。
 
 ## 目录结构
 
@@ -104,36 +157,40 @@ jlc-pcb-layout-skill/
 ├── install.sh / install.ps1
 ├── jlc-pcb-layout/         ← 技能本体
 │   ├── SKILL.md
-│   ├── references/         6 份规范转写 + 整洁度判据 + 执行手册
-│   ├── scripts/            rules.py / plan.py / check.py
-│   ├── assets/             constraints.json（全部数值的唯一真源）
-│   └── examples/           4 个快照样例 + 完整走查
+│   ├── references/         原理图工作流/功能块/ERC 判据 + 6 份规范转写 + 执行手册
+│   ├── scripts/            schem.py / rules.py / plan.py / check.py
+│   ├── assets/             constraints.json（数值唯一真源）+ circuit-blocks.json
+│   └── examples/           需求样例、成品 spec/netlist、反面 netlist、4 个 PCB 快照、两份走查
 └── test-cases/             4 个真实 KiCad 原理图（未启用的素材，见下）
 ```
 
-阈值全部集中在 `assets/constraints.json`，觉得哪个太严太松直接改数字，不用改代码。
+阈值全部集中在 `assets/constraints.json`（原理图部分在 `schematic` 节），觉得哪个太严太松直接改数字，不用改代码。功能块在 `assets/circuit-blocks.json`，加块的方法见 `references/circuit-blocks.md` 末节。
 
-## test-cases
+## 边界（先说清楚）
 
-`test-cases/` 里是 4 个真实开源原理图（CH340G USB-TTL、TinyUSB-CH340X、STM32F103C8），跨 KiCad 4/6/8 三代格式，器件数 20 / 27 / 105。
-
-**它们目前不被任何脚本读取**，是给「原理图 → 布局骨架」功能预留的素材。中间缺的是 `net2plan`：`.kicad_sch`/`.net` → 器件 + 网络表 → 按连通性聚类成 blocks → 喂给现成的 `plan.py`。
+- **不编料号。** 15 个块只给"必接什么、参数范围"，具体型号必须人选型后填 `lcsc`。这是刻意的——料号编错会造成批量买错料，比画错图贵得多。
+- **ERC 查不出全部。** 它只查结构性错误（悬空、缺失、极性、数值越界）。查不出：选型是否合适、时序是否满足、环路是否稳定、EMC 是否过关。这些必须人看。
+- **落笔只保证逻辑连通。** `playbook` 生成的脚本用"每个引脚拉一段带网络名的短线"建立连接，同名即连通。走线走向要人工整理——逻辑连通可验证，好看不可验证。
+- **不装 CLI 也能用前两层。** 只能算数值、出网表、跑 ERC、出 BOM，最后落笔得自己在画布上点。
+- **`test-cases/` 目前不被任何脚本读取。** 4 个真实开源原理图（CH340G USB-TTL、TinyUSB-CH340X、STM32F103C8，跨 KiCad 4/6/8 三代），是给「KiCad 工程 → 网表」功能预留的素材。中间缺一层 `.kicad_sch → netlist.json` 的转换（`netlist` 的输入契约已就绪）。
 
 ## 依赖
 
 | 层 | 依赖 | 说明 |
 |---|---|---|
-| 规范层 | 无 | 纯 Markdown |
+| 规范/需求层 | 无 | 纯 Markdown |
 | 计算/检查层 | Python 3.8+，**纯标准库** | 不用 pip install |
-| 落笔层 | `easyeda` CLI + daemon | 来自 [easyeda-agent](https://github.com/zhoushoujianwork/easyeda-agent)，本仓库不含 |
-
-不装 CLI 也能用前两层——照样算线宽、出坐标计划、跑合规检查，只是最后一步落笔得自己在画布上点。
+| 落笔层 | 嘉立创EDA专业版 + `easyeda` CLI / `lceda-pro` CLI | 可选，见 `references/eda-execution.md` |
 
 ## 数值来源
 
-条款来自华为 PCBLayout 设计规范、爱默生 PCB 设计规范、华硕内部 PCB 设计规范、上海贝尔 PCB 设计规范、印刷电路板通用设计规范、PCB 器件建库规范，以及 IPC-7351B 与通用 DFM 口径。出处编号写在 `constraints.json` 的 `_source` 字段里，`check.py` 输出的规则号可直接回 `references/` 查原文。
+PCB 侧条款来自华为 PCBLayout 设计规范、爱默生 PCB 设计规范、华硕内部 PCB 设计规范、上海贝尔 PCB 设计规范、印刷电路板通用设计规范、PCB 器件建库规范，以及 IPC-7351B 与通用 DFM 口径。
 
-**规范冲突时取严，与厂家能力表冲突时以厂家为准。** 投板前必须确认 PCB/SMT 厂家的实际能力——各家工艺窗口不一样，本仓库给的是保守起点，不是验收依据。
+原理图侧数值来自 I2C-bus specification UM10204、USB Type-C Cable and Connector Spec R2.0、TIA-485-A、ISO 11898-2、常见器件手册与厂商参考设计（TI/ADI/ST）。
+
+出处写在 `constraints.json` 的 `_source` 字段里，`check.py` / `schem.py erc` 输出的规则号可直接回 `references/` 查原文。
+
+**规范冲突时取严，与厂家能力表冲突时以厂家为准。** 投板前必须确认 PCB/SMT 厂家的实际能力——本仓库给的是保守起点，不是验收依据。原理图的安规间距（>60V、市电、医疗）本仓库不覆盖，必须由持证工程师审。
 
 ## License
 

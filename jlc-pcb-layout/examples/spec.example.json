@@ -1,0 +1,38 @@
+{
+  "project": "io-node-24v",
+  "generated_by": "schem.py spec 出草稿 → 人补参数（这一步不能省）",
+  "note": "这是 examples/req.example.txt 的成品规格。自动 spec 只能给出块清单，电源树方向、电流、UART 编号必须人来定。",
+  "rails": [
+    {"name": "VIN", "v": 24.0, "i_a": 1.5, "from": "power_protect"},
+    {"name": "VIN_IN", "v": 24.0, "i_a": 1.5, "from": "input"},
+    {"name": "5V", "v": 5.0, "i_a": 1.0, "from": "power_buck"},
+    {"name": "3V3", "v": 3.3, "i_a": 0.6, "from": "power_ldo"},
+    {"name": "VBUS", "v": 5.0, "i_a": 0.5, "from": "usb_typec_ufp"},
+    {"name": "GND", "v": 0.0, "i_a": null, "from": "common"}
+  ],
+  "blocks": [
+    {"type": "power_protect", "params": {"vop": 24, "fuse_a": 1.0}},
+    {"type": "power_buck", "params": {"rail": "5V", "vout": 5, "iout": 1.0, "fsw_khz": 500, "ind_uh": 22}},
+    {"type": "power_ldo", "params": {"rail": "3V3", "vout": 3.3, "iout": 0.6}},
+    {"type": "usb_typec_ufp", "params": {"vbus_v": 5}},
+    {"type": "mcu_min", "params": {"rail": "3V3", "crystal_mhz": 8, "cl_pf": 12, "cstray_pf": 3, "load_cap_pf": 18}},
+    {"type": "rs485", "params": {"rail": "3V3", "uart": "UART1", "term": true, "bias_ohm": 680}},
+    {"type": "can", "params": {"rail": "5V", "uart": "CAN1", "term": true}},
+    {"type": "relay_drive", "count": 3, "params": {"rail": "5V", "coil_ma": 70, "base_r": 1000}},
+    {"type": "key", "count": 2, "params": {"rail": "3V3", "pull_ohm": 10000, "cap_nf": 100}},
+    {"type": "led_ind", "count": 4, "params": {"color": "red", "ma": 5}},
+    {"type": "i2c_port", "params": {"rail": "3V3", "i2c": "I2C1", "pull_ohm": 4700}}
+  ],
+  "assumptions": [
+    "24V 母线直接进 buck 降到 5V，再 LDO 到 3.3V；若 3.3V 电流 >0.6A 应改成第二级 buck",
+    "RS485 与 CAN 的串口分别占用 UART1 与 CAN1，具体引脚由主控选型后绑定",
+    "三路继电器用同一套驱动参数（SRD-5V 线圈 70mA，β 按 100 算）",
+    "USB Type-C 只做受电调试口，不做数据通信"
+  ],
+  "open_questions": [
+    "主控具体型号？（netlist 里 MCU 的 pin 映射现在还是功能名）",
+    "继电器触点负载是交流还是直流？直流感性负载要额外加 RC 吸收",
+    "现场是否有雷击/浪涌测试要求？（决定 TVS 从 SMBJ 升级到 SMCJ 或加 GDT）",
+    "外壳是否金属？（影响接地与 ESD 路径）"
+  ]
+}

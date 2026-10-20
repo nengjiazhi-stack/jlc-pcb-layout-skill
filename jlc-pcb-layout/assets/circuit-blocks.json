@@ -1,0 +1,1372 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "note": "原理图功能块库。每个块是『可直接生成网表的最小正确电路』：parts 里每条 pins 映射 = 一个真实引脚连接，netlist 生成器按此连线，ERC 按此判错。数值来自 assets/constraints.json → schematic，公式来自 scripts/schem.py calc。",
+    "pin_id_convention": "IC 类用功能名（VIN/SW/FB/RST），阻容感二极管用 1/2，继电器用 A1/A2/11/14/12。pin_id 只是网表内部标识，落到 EDA 时必须用 bind 读回真实引脚号。",
+    "net_convention": "以 # 开头的网络是『块内局部网』，实例化时自动加实例前缀（如 KEY1_N）；其余网络全局同名相连（GND / 3V3 / RS485_A）。${xxx} 是参数占位，由 spec 或默认值替换。",
+    "binding": "required = 必须由用户选定具体型号并绑引脚号（ERC 会报 INFO 直到绑定完成）；optional = 有推荐值但可替换；none = 通用无源件。",
+    "honesty": "本库只给『必接什么、接在哪』，不给具体料号。料号一律由用户/立创商城确认后填入 netlist 的 lcsc 字段——编料号是这类工具最容易造成批量报废的错误。"
+  },
+  "blocks": {
+    "power_protect": {
+      "title": "输入保护（保险 + TVS）",
+      "tag": "PP",
+      "category": "power",
+      "keywords": [
+        "输入保护",
+        "防反接",
+        "防浪涌",
+        "保险丝",
+        "tvs",
+        "dc 输入",
+        "电源输入"
+      ],
+      "summary": "DC 输入 → 保险丝 → TVS 钳位 → 板内 VIN，是整板唯一允许接外部电源的入口。",
+      "params": {
+        "vop": {
+          "type": "number",
+          "unit": "V",
+          "default": 12,
+          "question": "输入额定电压？"
+        },
+        "fuse_a": {
+          "type": "number",
+          "unit": "A",
+          "default": 1.0,
+          "question": "整板最大输入电流？"
+        },
+        "vrwm": {
+          "type": "number",
+          "unit": "V",
+          "default": 30,
+          "derived": "tvs_from_vop"
+        }
+      },
+      "iface": {
+        "in": [
+          "VIN_IN"
+        ],
+        "out": [
+          "VIN"
+        ]
+      },
+      "parts": [
+        {
+          "kind": "J",
+          "value": "DC-005 5.5x2.1",
+          "pins": {
+            "1": "VIN_IN",
+            "2": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "F",
+          "value": "${fuse_a}A 自恢复",
+          "pins": {
+            "1": "VIN_IN",
+            "2": "VIN"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "TVS",
+          "value": "SMBJ${vrwm}A",
+          "pins": {
+            "A": "GND",
+            "K": "VIN"
+          },
+          "binding": "required",
+          "note": "VRWM 由 vop 推出（≥1.1×vop 的标准档）；钳位电压 VC 必须低于后级芯片绝对最大输入"
+        },
+        {
+          "kind": "C",
+          "value": "10uF",
+          "pins": {
+            "1": "VIN",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "TVS 的 VRWM ≥ 1.1×工作电压，钳位电压低于后级器件绝对最大值",
+        "保险丝额定电流取整板最大电流的 1.5~2 倍",
+        "钳位电压 VC 要低于后级 buck/LDO 的绝对最大输入电压，24V 系统常需 36~48V 档"
+      ],
+      "erc": [
+        "SCH-PWR-PROTECT",
+        "SCH-TVX-VRWM"
+      ],
+      "doc": "references/circuit-blocks.md#power_protect"
+    },
+    "power_ldo": {
+      "title": "LDO 线性稳压",
+      "tag": "LDO",
+      "category": "power",
+      "keywords": [
+        "ldo",
+        "线性稳压",
+        "降压",
+        "3.3v",
+        "5v",
+        "稳压"
+      ],
+      "summary": "低噪声小电流主选；压差大或电流大时必须改 buck，否则结温顶不住。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "3V3",
+          "question": "输出电源网络名？"
+        },
+        "vout": {
+          "type": "number",
+          "unit": "V",
+          "default": 3.3
+        },
+        "iout": {
+          "type": "number",
+          "unit": "A",
+          "default": 0.3,
+          "question": "该路最大电流？"
+        }
+      },
+      "iface": {
+        "in": [
+          "VIN"
+        ],
+        "out": [
+          "${rail}"
+        ]
+      },
+      "parts": [
+        {
+          "kind": "IC",
+          "value": "LDO-${vout}V",
+          "pins": {
+            "1": "GND",
+            "2": "${rail}",
+            "3": "VIN"
+          },
+          "binding": "required",
+          "note": "SOT-223 常见脚序 1=GND/ADJ 2=VOUT 3=VIN，实际以选定型号 datasheet 为准"
+        },
+        {
+          "kind": "C",
+          "value": "1uF",
+          "pins": {
+            "1": "VIN",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "10uF",
+          "pins": {
+            "1": "${rail}",
+            "2": "GND"
+          },
+          "binding": "none",
+          "note": "输出电容兼作该路 bulk；datasheet 对输出电容有 ESR 要求时按手册改"
+        }
+      ],
+      "requires": [
+        "输入输出各一颗 ≥1µF 陶瓷电容，X7R/X5R",
+        "Pd=(Vin−Vout)×Iout 超过 0.5W 应改 buck 或加散热"
+      ],
+      "erc": [
+        "SCH-PWR-BULK",
+        "SCH-PWR-DECOUPLE"
+      ],
+      "doc": "references/circuit-blocks.md#power_ldo"
+    },
+    "power_buck": {
+      "title": "Buck 开关稳压",
+      "tag": "BUCK",
+      "category": "power",
+      "keywords": [
+        "buck",
+        "开关电源",
+        "dcdc",
+        "dc-dc",
+        "大电流降压",
+        "效率"
+      ],
+      "summary": "压差大/电流大时用；电感与输出电容按开关频率算，不是拍脑袋选。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "5V"
+        },
+        "vout": {
+          "type": "number",
+          "unit": "V",
+          "default": 5
+        },
+        "iout": {
+          "type": "number",
+          "unit": "A",
+          "default": 1.0
+        },
+        "fsw_khz": {
+          "type": "number",
+          "unit": "kHz",
+          "default": 500
+        },
+        "ind_uh": {
+          "type": "number",
+          "unit": "uH",
+          "default": 22
+        }
+      },
+      "iface": {
+        "in": [
+          "VIN"
+        ],
+        "out": [
+          "${rail}"
+        ]
+      },
+      "parts": [
+        {
+          "kind": "IC",
+          "value": "BUCK-${vout}V",
+          "pins": {
+            "VIN": "VIN",
+            "SW": "#SW",
+            "GND": "GND",
+            "FB": "#FB",
+            "EN": "VIN"
+          },
+          "binding": "required",
+          "note": "EN 直接接 VIN 为上电即启；需要时序控制时改接使能网络"
+        },
+        {
+          "kind": "L",
+          "value": "${ind_uh}uH",
+          "pins": {
+            "1": "#SW",
+            "2": "${rail}"
+          },
+          "binding": "required",
+          "note": "饱和电流 ≥ 1.3×Iout，直流电阻越小越好"
+        },
+        {
+          "kind": "C",
+          "value": "10uF",
+          "pins": {
+            "1": "VIN",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "22uF",
+          "pins": {
+            "1": "${rail}",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "10k",
+          "pins": {
+            "1": "${rail}",
+            "2": "#FB"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "3.3k",
+          "pins": {
+            "1": "#FB",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "电感量与输出电容按 fsw 与 ΔI=0.3×Iout 计算，见 schem.py calc buck",
+        "FB 分压电阻按芯片基准电压重算，示例值仅对 0.8V 基准成立"
+      ],
+      "erc": [
+        "SCH-PWR-BULK",
+        "SCH-PWR-DECOUPLE"
+      ],
+      "doc": "references/circuit-blocks.md#power_buck"
+    },
+    "mcu_min": {
+      "title": "MCU 最小系统",
+      "tag": "MCU",
+      "category": "mcu",
+      "keywords": [
+        "mcu",
+        "单片机",
+        "最小系统",
+        "主控",
+        "stm32",
+        "gd32",
+        "m0",
+        "m3",
+        "risc-v"
+      ],
+      "summary": "复位 + 时钟 + 去耦 + 下载口四件套。缺任何一项，板子能上电但不稳定或压根不启动。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "3V3"
+        },
+        "crystal_mhz": {
+          "type": "number",
+          "unit": "MHz",
+          "default": 8
+        },
+        "cl_pf": {
+          "type": "number",
+          "unit": "pF",
+          "default": 12
+        },
+        "cstray_pf": {
+          "type": "number",
+          "unit": "pF",
+          "default": 3
+        },
+        "load_cap_pf": {
+          "type": "number",
+          "unit": "pF",
+          "default": 18
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "MCU",
+          "value": "MCU-48P",
+          "pins": {
+            "VDD": "${rail}",
+            "VSS": "GND",
+            "NRST": "#NRST",
+            "BOOT0": "GND",
+            "SWDIO": "SWDIO",
+            "SWCLK": "SWCLK",
+            "XTAL_IN": "#XI",
+            "XTAL_OUT": "#XO"
+          },
+          "binding": "required",
+          "note": "只列最小系统必需脚；其余 GPIO 由用户按需求补充。实际芯片的电源脚往往不止一个，每个 VDD 都要配一颗 100nF"
+        },
+        {
+          "kind": "R",
+          "value": "10k",
+          "pins": {
+            "1": "${rail}",
+            "2": "#NRST"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "100nF",
+          "pins": {
+            "1": "#NRST",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "100nF",
+          "pins": {
+            "1": "${rail}",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "Y",
+          "value": "${crystal_mhz}MHz",
+          "pins": {
+            "1": "#XI",
+            "2": "#XO"
+          },
+          "binding": "required"
+        },
+        {
+          "kind": "C",
+          "value": "${load_cap_pf}pF",
+          "pins": {
+            "1": "#XI",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "${load_cap_pf}pF",
+          "pins": {
+            "1": "#XO",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "J",
+          "value": "SWD-4P",
+          "pins": {
+            "1": "${rail}",
+            "2": "SWDIO",
+            "3": "SWCLK",
+            "4": "GND"
+          },
+          "binding": "optional"
+        }
+      ],
+      "requires": [
+        "每个 VDD 脚一颗 100nF，就近打过孔到地",
+        "NRST 上拉 10k + 100nF 对地",
+        "晶振负载电容按 CL 公式算（schem.py calc crystal）",
+        "BOOT0 必须有确定电平，不能悬空"
+      ],
+      "erc": [
+        "SCH-MCU-RESET",
+        "SCH-MCU-CLOCK",
+        "SCH-XTAL-CL",
+        "SCH-PWR-DECOUPLE"
+      ],
+      "doc": "references/circuit-blocks.md#mcu_min"
+    },
+    "usb_typec_ufp": {
+      "title": "USB Type-C 受电口（UFP）",
+      "tag": "USB",
+      "category": "interface",
+      "keywords": [
+        "type-c",
+        "typec",
+        "usb-c",
+        "usb 口",
+        "受电",
+        "5v 供电"
+      ],
+      "summary": "CC1/CC2 各一颗 5.1k 下拉是硬性要求，缺一颗线插上也不来电。",
+      "params": {
+        "vbus_v": {
+          "type": "number",
+          "unit": "V",
+          "default": 5
+        }
+      },
+      "iface": {
+        "in": [],
+        "out": [
+          "VBUS"
+        ]
+      },
+      "parts": [
+        {
+          "kind": "J",
+          "value": "USB-C-16P",
+          "pins": {
+            "VBUS": "VBUS",
+            "GND": "GND",
+            "CC1": "#CC1",
+            "CC2": "#CC2",
+            "DP": "USB_DP",
+            "DN": "USB_DN"
+          },
+          "binding": "required",
+          "note": "受电设备只做 UFP：CC 上只放 Rd，不放 Rp（放了会变成双角色，source 不供电）"
+        },
+        {
+          "kind": "R",
+          "value": "5.1k",
+          "pins": {
+            "1": "#CC1",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "5.1k",
+          "pins": {
+            "1": "#CC2",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "TVS",
+          "value": "USBLC6-2SC6",
+          "pins": {
+            "IO1": "USB_DN",
+            "IO2": "USB_DP",
+            "GND": "GND",
+            "VBUS": "VBUS"
+          },
+          "binding": "required",
+          "note": "ESD 阵列要放在连接器与串阻之间，越靠近连接器越好"
+        },
+        {
+          "kind": "C",
+          "value": "1uF",
+          "pins": {
+            "1": "VBUS",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "CC1/CC2 各 5.1kΩ±5% 下拉到 GND",
+        "D+/D− 就近 ESD 保护",
+        "VBUS 至少 1µF"
+      ],
+      "erc": [
+        "SCH-USB-CC",
+        "SCH-USB-ESD"
+      ],
+      "doc": "references/circuit-blocks.md#usb_typec_ufp"
+    },
+    "rs485": {
+      "title": "RS485 收发",
+      "tag": "RS485",
+      "category": "interface",
+      "keywords": [
+        "rs485",
+        "485",
+        "modbus",
+        "差分总线",
+        "半双工"
+      ],
+      "summary": "收发器 + 失效保护偏置 + 可选 120Ω 终端 + 总线 TVS。终端只在总线两端各一个，中间节点不许加。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "3V3"
+        },
+        "uart": {
+          "type": "string",
+          "default": "UART1"
+        },
+        "term": {
+          "type": "boolean",
+          "default": true
+        },
+        "bias_ohm": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 680
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "IC",
+          "value": "RS485-${rail}",
+          "pins": {
+            "RO": "${uart}_RX",
+            "RE": "#DE",
+            "DE": "#DE",
+            "DI": "${uart}_TX",
+            "A": "RS485_A",
+            "B": "RS485_B",
+            "VCC": "${rail}",
+            "GND": "GND"
+          },
+          "binding": "required",
+          "note": "RE/DE 并在一起做方向控制；不接 MCU 时需下拉保证默认收态"
+        },
+        {
+          "kind": "R",
+          "value": "${bias_ohm}",
+          "pins": {
+            "1": "RS485_A",
+            "2": "${rail}"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "${bias_ohm}",
+          "pins": {
+            "1": "RS485_B",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "120",
+          "pins": {
+            "1": "RS485_A",
+            "2": "RS485_B"
+          },
+          "binding": "none",
+          "optional": true,
+          "note": "仅当本节点是总线两端之一时放置；中间节点加了会把总线负载压垮"
+        },
+        {
+          "kind": "TVS",
+          "value": "SMBJ6.5CA",
+          "pins": {
+            "1": "RS485_A",
+            "2": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "TVS",
+          "value": "SMBJ6.5CA",
+          "pins": {
+            "1": "RS485_B",
+            "2": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "R",
+          "value": "10k",
+          "pins": {
+            "1": "#DE",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "J",
+          "value": "KF128-3P",
+          "pins": {
+            "1": "RS485_A",
+            "2": "RS485_B",
+            "3": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "C",
+          "value": "100nF",
+          "pins": {
+            "1": "${rail}",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "总线两端各 120Ω，中间节点不加",
+        "失效保护偏置：A 上拉、B 下拉，Vab_idle ≥200mV",
+        "总线入口加 TVS，共模范围 −7~+12V"
+      ],
+      "erc": [
+        "SCH-RS485-TERM",
+        "SCH-RS485-BIAS"
+      ],
+      "doc": "references/circuit-blocks.md#rs485"
+    },
+    "can": {
+      "title": "CAN 收发",
+      "tag": "CAN",
+      "category": "interface",
+      "keywords": [
+        "can",
+        "canbus",
+        "can 总线",
+        "汽车总线"
+      ],
+      "summary": "收发器 + 分裂终端（2×60Ω + 4.7nF）。终端同样只在两端各一份。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "5V"
+        },
+        "uart": {
+          "type": "string",
+          "default": "CAN1"
+        },
+        "term": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "IC",
+          "value": "CAN-${rail}",
+          "pins": {
+            "TXD": "${uart}_TX",
+            "RXD": "${uart}_RX",
+            "S": "GND",
+            "VCC": "${rail}",
+            "GND": "GND",
+            "CANH": "CAN_H",
+            "CANL": "CAN_L",
+            "VREF": "#VREF"
+          },
+          "binding": "required",
+          "note": "S 脚接地为高速模式；待机控制请接 MCU"
+        },
+        {
+          "kind": "R",
+          "value": "60",
+          "pins": {
+            "1": "CAN_H",
+            "2": "#VREF"
+          },
+          "binding": "none",
+          "optional": true
+        },
+        {
+          "kind": "R",
+          "value": "60",
+          "pins": {
+            "1": "#VREF",
+            "2": "CAN_L"
+          },
+          "binding": "none",
+          "optional": true
+        },
+        {
+          "kind": "C",
+          "value": "4.7nF",
+          "pins": {
+            "1": "#VREF",
+            "2": "GND"
+          },
+          "binding": "none",
+          "optional": true
+        },
+        {
+          "kind": "J",
+          "value": "KF128-3P",
+          "pins": {
+            "1": "CAN_H",
+            "2": "CAN_L",
+            "3": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "C",
+          "value": "100nF",
+          "pins": {
+            "1": "${rail}",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "分裂终端两半各 60Ω，中点经 4.7nF 落地（抑制共模）",
+        "总线两端各一份终端，中间节点不加",
+        "TXD/RXD 电平必须与收发器 VCC 匹配"
+      ],
+      "erc": [
+        "SCH-CAN-TERM"
+      ],
+      "doc": "references/circuit-blocks.md#can"
+    },
+    "relay_drive": {
+      "title": "继电器驱动",
+      "tag": "RLY",
+      "category": "driver",
+      "keywords": [
+        "继电器",
+        "relay",
+        "干接点",
+        "开关量输出"
+      ],
+      "summary": "三极管 + 基极电阻 + 下拉 + 续流二极管。线圈不并续流二极管，关断瞬间必打穿三极管。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "5V"
+        },
+        "ctrl": {
+          "type": "net",
+          "default": "#CTRL"
+        },
+        "coil_ma": {
+          "type": "number",
+          "unit": "mA",
+          "default": 70
+        },
+        "base_r": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 1000
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "K",
+          "value": "SRD-${rail}",
+          "pins": {
+            "A1": "${rail}",
+            "A2": "#COIL",
+            "11": "#COM",
+            "14": "#NO",
+            "12": "#NC"
+          },
+          "binding": "required"
+        },
+        {
+          "kind": "Q",
+          "value": "S8050",
+          "pins": {
+            "B": "#BASE",
+            "C": "#COIL",
+            "E": "GND"
+          },
+          "binding": "required"
+        },
+        {
+          "kind": "R",
+          "value": "${base_r}",
+          "pins": {
+            "1": "${ctrl}",
+            "2": "#BASE"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "10k",
+          "pins": {
+            "1": "#BASE",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "D",
+          "value": "1N4148W",
+          "pins": {
+            "A": "#COIL",
+            "K": "${rail}"
+          },
+          "binding": "none",
+          "note": "续流二极管反并联在线圈两端：阴极接电源侧，阳极接三极管集电极"
+        },
+        {
+          "kind": "J",
+          "value": "KF128-3P",
+          "pins": {
+            "1": "#COM",
+            "2": "#NO",
+            "3": "#NC"
+          },
+          "binding": "optional"
+        }
+      ],
+      "requires": [
+        "线圈必须反并联续流二极管",
+        "基极串限流电阻 + 下拉电阻",
+        "Ic 余量 ≥3×线圈电流"
+      ],
+      "erc": [
+        "SCH-RELAY-FLYBACK"
+      ],
+      "doc": "references/circuit-blocks.md#relay_drive"
+    },
+    "mosfet_load": {
+      "title": "MOSFET 低边开关",
+      "tag": "MOS",
+      "category": "driver",
+      "keywords": [
+        "mosfet",
+        "mos 管",
+        "低边开关",
+        "负载开关",
+        "电磁阀",
+        "电机"
+      ],
+      "summary": "栅极串阻 + 下拉，漏极接负载负极。感性负载另加续流。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "12V"
+        },
+        "ctrl": {
+          "type": "net",
+          "default": "#CTRL"
+        },
+        "gate_r": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 100
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "Q",
+          "value": "AO3400A",
+          "pins": {
+            "G": "#G",
+            "D": "#DRAIN",
+            "S": "GND"
+          },
+          "binding": "required"
+        },
+        {
+          "kind": "R",
+          "value": "${gate_r}",
+          "pins": {
+            "1": "${ctrl}",
+            "2": "#G"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "10k",
+          "pins": {
+            "1": "#G",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "J",
+          "value": "KF128-2P",
+          "pins": {
+            "1": "${rail}",
+            "2": "#DRAIN"
+          },
+          "binding": "optional"
+        }
+      ],
+      "requires": [
+        "栅极必须有确定电平（下拉），否则上电瞬间误导通",
+        "Vgs 阈值要低于驱动电压，且 Vgs_max 高于驱动电压"
+      ],
+      "erc": [],
+      "doc": "references/circuit-blocks.md#mosfet_load"
+    },
+    "key": {
+      "title": "按键输入",
+      "tag": "KEY",
+      "category": "user-io",
+      "keywords": [
+        "按键",
+        "button",
+        "key",
+        "拨码",
+        "复位键"
+      ],
+      "summary": "上拉 + 对地按键 + 并联电容消抖。按键直接接 GND，靠上拉给确定电平。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "3V3"
+        },
+        "pull_ohm": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 10000
+        },
+        "cap_nf": {
+          "type": "number",
+          "unit": "nF",
+          "default": 100
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "SW",
+          "value": "轻触 6x6",
+          "pins": {
+            "1": "#N",
+            "2": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "R",
+          "value": "${pull_ohm}",
+          "pins": {
+            "1": "${rail}",
+            "2": "#N"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "${cap_nf}nF",
+          "pins": {
+            "1": "#N",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "上拉电阻不能省（MCU 内部上拉也建议外部加，抗干扰）",
+        "并联电容做硬件消抖，软件仍需去抖"
+      ],
+      "erc": [],
+      "doc": "references/circuit-blocks.md#key"
+    },
+    "led_ind": {
+      "title": "LED 指示",
+      "tag": "LED",
+      "category": "user-io",
+      "keywords": [
+        "led",
+        "指示灯",
+        "指示灯珠",
+        "状态灯"
+      ],
+      "summary": "限流电阻按 (Vcc−Vf)/I 算，别直接挂 IO。",
+      "params": {
+        "ctrl": {
+          "type": "net",
+          "default": "#CTRL"
+        },
+        "color": {
+          "type": "string",
+          "default": "red"
+        },
+        "ma": {
+          "type": "number",
+          "unit": "mA",
+          "default": 5
+        }
+      },
+      "iface": {
+        "in": [],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "LED",
+          "value": "LED-${color}",
+          "pins": {
+            "A": "#A",
+            "K": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "R",
+          "value": "1k",
+          "pins": {
+            "1": "${ctrl}",
+            "2": "#A"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "LED 必须串限流电阻，阻值按 (Vcc−Vf)/I 算",
+        "IO 灌电流能力要够（多颗并联时核算）"
+      ],
+      "erc": [
+        "SCH-LED-RES"
+      ],
+      "doc": "references/circuit-blocks.md#led_ind"
+    },
+    "i2c_port": {
+      "title": "I2C 接口座",
+      "tag": "I2C",
+      "category": "interface",
+      "keywords": [
+        "i2c",
+        "iic",
+        "oled",
+        "传感器",
+        "eeprom"
+      ],
+      "summary": "上拉电阻按总线电容与速率算，不是标配 4.7k 就完事。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "3V3"
+        },
+        "i2c": {
+          "type": "string",
+          "default": "I2C"
+        },
+        "pull_ohm": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 4700
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "J",
+          "value": "PH2.0-4P",
+          "pins": {
+            "1": "${rail}",
+            "2": "${i2c}_SDA",
+            "3": "${i2c}_SCL",
+            "4": "GND"
+          },
+          "binding": "optional"
+        },
+        {
+          "kind": "R",
+          "value": "${pull_ohm}",
+          "pins": {
+            "1": "${rail}",
+            "2": "${i2c}_SDA"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "${pull_ohm}",
+          "pins": {
+            "1": "${rail}",
+            "2": "${i2c}_SCL"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "SDA/SCL 各一颗上拉，阻值按 Cb 与 tr 算（schem.py calc i2c）",
+        "多主/长线时降低上拉阻值并核算 VOL"
+      ],
+      "erc": [
+        "SCH-I2C-PULLUP"
+      ],
+      "doc": "references/circuit-blocks.md#i2c_port"
+    },
+    "uart_port": {
+      "title": "UART 排针",
+      "tag": "UART",
+      "category": "interface",
+      "keywords": [
+        "uart",
+        "串口",
+        "ttl 串口",
+        "调试口"
+      ],
+      "summary": "三线制调试口，注意 TX/RX 交叉。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "3V3"
+        },
+        "uart": {
+          "type": "string",
+          "default": "UART2"
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "J",
+          "value": "PH2.0-4P",
+          "pins": {
+            "1": "${rail}",
+            "2": "${uart}_TX",
+            "3": "${uart}_RX",
+            "4": "GND"
+          },
+          "binding": "optional"
+        }
+      ],
+      "requires": [
+        "外部设备接进来时 TX/RX 必须交叉",
+        "长线或跨板时串 22~100Ω 并在接收端加 TVS"
+      ],
+      "erc": [],
+      "doc": "references/circuit-blocks.md#uart_port"
+    },
+    "adc_divider": {
+      "title": "ADC 分压采样",
+      "tag": "ADC",
+      "category": "user-io",
+      "keywords": [
+        "adc",
+        "采样",
+        "分压",
+        "电压检测",
+        "电流检测"
+      ],
+      "summary": "分压 + 100nF 缓冲。源阻抗 ≤10k 是硬约束，超了采样就不准。",
+      "params": {
+        "vin_net": {
+          "type": "string",
+          "default": "VIN"
+        },
+        "r_top": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 30000
+        },
+        "r_bottom": {
+          "type": "number",
+          "unit": "Ω",
+          "default": 10000
+        }
+      },
+      "iface": {
+        "in": [],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "R",
+          "value": "${r_top}",
+          "pins": {
+            "1": "${vin_net}",
+            "2": "#MID"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "R",
+          "value": "${r_bottom}",
+          "pins": {
+            "1": "#MID",
+            "2": "GND"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "C",
+          "value": "100nF",
+          "pins": {
+            "1": "#MID",
+            "2": "GND"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "分压后源阻抗 ≤10kΩ（SAR ADC 采样保持要求）",
+        "并 100nF 做电荷缓冲",
+        "分压电流 ≥10µA 才有抗噪余量"
+      ],
+      "erc": [
+        "SCH-ADC-IMP"
+      ],
+      "doc": "references/circuit-blocks.md#adc_divider"
+    },
+    "buzzer": {
+      "title": "蜂鸣器驱动",
+      "tag": "BZ",
+      "category": "driver",
+      "keywords": [
+        "蜂鸣器",
+        "buzzer",
+        "报警"
+      ],
+      "summary": "三极管驱动 + 续流。有源/无源接法不同，参数里要说明。",
+      "params": {
+        "rail": {
+          "type": "string",
+          "default": "5V"
+        },
+        "ctrl": {
+          "type": "net",
+          "default": "#CTRL"
+        }
+      },
+      "iface": {
+        "in": [
+          "${rail}"
+        ],
+        "out": []
+      },
+      "parts": [
+        {
+          "kind": "BZ",
+          "value": "有源蜂鸣器 5V",
+          "pins": {
+            "1": "${rail}",
+            "2": "#B"
+          },
+          "binding": "required"
+        },
+        {
+          "kind": "Q",
+          "value": "S8050",
+          "pins": {
+            "B": "#BASE",
+            "C": "#B",
+            "E": "GND"
+          },
+          "binding": "required"
+        },
+        {
+          "kind": "R",
+          "value": "1k",
+          "pins": {
+            "1": "${ctrl}",
+            "2": "#BASE"
+          },
+          "binding": "none"
+        },
+        {
+          "kind": "D",
+          "value": "1N4148W",
+          "pins": {
+            "A": "#B",
+            "K": "${rail}"
+          },
+          "binding": "none"
+        }
+      ],
+      "requires": [
+        "感性负载（蜂鸣器/继电器）必须并续流二极管",
+        "无源蜂鸣器需要 PWM 驱动，不能只给直流"
+      ],
+      "erc": [
+        "SCH-RELAY-FLYBACK"
+      ],
+      "doc": "references/circuit-blocks.md#buzzer"
+    }
+  }
+}

@@ -186,3 +186,172 @@ python check.py snapshot.json --min-severity WARN
 - 用户给的坐标与结构图矛盾。
 
 这五种情况**停下来问**，比"先画了再说"便宜得多。
+
+---
+
+## 6. 原理图落笔（`sch_*` API）
+
+前面五节讲的是 PCB。原理图是另一套 API、另一套坐标系、另一批坑。**不要拿 PCB 的经验套**。
+
+### 6.1 数据模型
+
+| 项 | PCB | 原理图 |
+|---|---|---|
+| 坐标单位 | 1 mil | **10 mil**（0.01 inch） |
+| 坐标系 | 原点左下，y 向上 | 原点左下，y 向上 |
+| A4 图幅 | — | 1170 × 825（10mil 单位） |
+| 建图元 | `pcb_Primitive*` | `sch_Primitive*` |
+
+按 10mil 算：A4 图纸可用区域约 110×78 个栅格，一张 A4 放 40~50 个器件就该分页了。
+
+### 6.2 用到的模块
+
+| 模块 | 用途 |
+|---|---|
+| `eda.lib_LibrariesList.getSystemLibraryUuid()` | 取系统库 UUID（放器件前必须） |
+| `eda.lib_Device.getByLcscIds([...])` / `.search(kw)` | 按料号或关键字搜器件 |
+| `eda.sch_PrimitiveComponent.create()` | 放器件 |
+| `eda.sch_PrimitiveComponent.get()` / `.modify()` | 读/写位号与属性 |
+| `eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId()` | **读回引脚真实坐标** |
+| `eda.sch_PrimitiveComponent.createNetFlag()` | 放电源/地符号 |
+| `eda.sch_PrimitiveWire.create()` | 连线（可带网络名） |
+| `eda.sch_Document.save()` | 保存 |
+| `eda.sch_Drc.check()` | 原理图 DRC |
+| `eda.sch_ManufactureData.getNetlistFile()` | 导出网表（用于比对） |
+| `eda.sch_ManufactureData.getBomFile()` | 导出 BOM |
+| `eda.dmt_Project.getCurrentProjectInfo()` | 取 page UUID |
+| `eda.dmt_EditorControl.openDocument(page)` | 打开图页（操作前必须） |
+
+### 6.3 已验证的签名
+
+```js
+// 放器件：8 个参数，顺序不能错
+await eda.sch_PrimitiveComponent.create(
+  lib,          // { libraryType, libraryUuid, uuid } 或搜索结果项
+  x, y,         // 10mil 单位
+  undefined,    // subPartName：多子部件器件才填
+  0,            // rotation（逆时针为正）
+  false,        // mirror
+  true,         // addIntoBom
+  true          // addIntoPcb —— 漏传或传 false，同步 PCB 时是 0 个器件
+);
+
+// 位号：create → 读快照 → 一次写回（不要分两次 modify）
+const snap = comp.getState_OtherProperty();
+await eda.sch_PrimitiveComponent.modify(id, { designator: 'U1', otherProperty: snap });
+
+// 引脚坐标：只能读回，不能推算
+const pins = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(id);
+// 每项：pinNumber / x / y（可能要以 getState_*() 取，见 6.5）
+
+// 电源符号
+await eda.sch_PrimitiveComponent.createNetFlag('Power', '3V3', x, y, 0, false);
+// 类型：'Power' | 'Ground' | 'AnalogGround' | 'ProtectGround'
+
+// 连线：坐标组 + 网络名
+await eda.sch_PrimitiveWire.create(
+  [[x, y, x + 20, y]],   // 每段 4 个数：x1,y1,x2,y2
+  '3V3',                 // 网络名（不传则按落点推断）
+  null,                  // 颜色
+  2,                     // 线宽 1~10
+  null                   // 线型
+);
+
+// DRC：save 之后等 8~10 秒
+await eda.sch_Document.save();
+await new Promise(r => setTimeout(r, 9000));
+const violations = await eda.sch_Drc.check(true, false, true);  // 明细（分组树）
+const passed     = await eda.sch_Drc.check(true, false, false); // 布尔
+
+// 网表导出（比对用）
+const f = await eda.sch_ManufactureData.getNetlistFile('BOARD_NET', 'Protel2');
+const txt = await f.text();   // 必须 await
+```
+
+### 6.4 落笔顺序
+
+```
+0. getCurrentProjectInfo()          // 拿 page UUID
+1. openDocument(page) + 等 2500ms   // 不打开图页，create 会静默失败
+2. 逐器件：搜索 → create → modify(位号)
+3. getAllPinsByPrimitiveId() 读回坐标
+4. 逐引脚拉带 net 的短线（同名即连通）
+5. 电源网络放 createNetFlag
+6. sch_Document.save()
+7. 等 8~10s → sch_Drc.check()
+8. getNetlistFile() 导出 → 与设计网表比对
+```
+
+**为什么第 2 步要一个一个来**：`create()` 参数错时不报错、返回 `undefined`。必须每放一个就检查返回值非空。批量 `invoke` 时每批 20~25 个，超时余量留足（默认 60s，大工程要调 `--timeout`）。
+
+### 6.5 版本差异（这一条能省你一晚上）
+
+| 项 | v3.2.x | v3.3+ |
+|---|---|---|
+| 库模块名 | `eda.lib_Device` | `eda.LIB_Device` |
+| `create()` | **同步**，不能 await | 异步，返回 Promise |
+
+**在 v3.2.x 里给 `create()` 加 `await` 会静默失败**——不报错、不放器件、不进 catch。名字大小写不对也是 `undefined`。
+
+生成的落笔脚本 (`schem.py playbook`) 用这个兼容写法绕过去：
+
+```js
+const LD = eda.lib_Device || eda.LIB_Device;
+function callSyncOrAsync(fn, args) {
+  const r = fn.apply(null, args);                    // 先同步调用
+  return (r && typeof r.then === 'function') ? r : Promise.resolve(r);  // 是 Promise 才 await
+}
+```
+
+属性读取同理，用 getter 和裸字段都试：
+
+```js
+function pick(o, k) {
+  const g = o['getState_' + k];
+  return (typeof g === 'function') ? g.call(o) : o[k];
+}
+```
+
+**动手前先探测**：在「运行脚本」里跑一段 `Object.keys(eda).filter(k => k.startsWith('sch_'))` 和 `typeof eda.sch_PrimitiveComponent.create(...)`，比照文档猜快得多。
+
+### 6.6 连线为什么可以"每个引脚拉一段短线"
+
+`sch_PrimitiveWire.create(line, net)` 的第二个参数是**网络名**。原理图的连通性判定基于网络名，不是几何接触：
+
+- 同一网络名 = 同一网络
+- 相邻段会自动合并成同一个 WIRE 图元组（返回的 id 重复是正常的，不是 bug）
+- 段与段必须首尾相接，每段必须**水平或垂直**（不能斜线）
+
+所以「每个引脚往外拉 20 单位的短线 + 同名 net」就能建立逻辑连通，而不用先算好整条路径。代价是图上看起来像一堆触须，**走向要人工整理**。这是刻意的取舍：逻辑连通可验证，走向好看不可验证。
+
+### 6.7 坑表（原理图专属）
+
+| 坑 | 现象 | 对策 |
+|---|---|---|
+| `addIntoPcb` 没传 `true` | 原理图有器件，同步 PCB 后 0 个器件 | create 第 8 个参数固定 `true` |
+| 旧版加 `await` | 不报错、不放器件 | 用 6.5 的 `callSyncOrAsync` |
+| 模块名大小写 | `LD` 为 `undefined`，每次都 MISS | `eda.lib_Device \|\| eda.LIB_Device` |
+| 自己推算引脚坐标 | 线画到别处，DRC 报"未连接" | 一律 `getAllPinsByPrimitiveId` 读回 |
+| 没 `openDocument` | create 静默失败 | 先打开图页并等 2500ms |
+| DRC 立刻跑 | 报一堆假错或 0 违规 | `save()` 后等 8~10 秒 |
+| 位号分两次 modify | 第二次覆盖掉第一次 | 一次 modify 写 `designator` + `otherProperty` |
+| 网络名拼错 | 两边都"连着"但网络不同 | 网络名从 netlist 取，不要手敲 |
+| 斜线 | create 失败或图形异常 | 正交折线，每段水平/垂直 |
+| 中文位号/网络名 | 部分版本写入异常 | 位号与网络名用 ASCII |
+
+### 6.8 CLI 调用方式
+
+```bash
+lceda-pro open                       # 开 session，返回 sessionId
+lceda-pro invoke --session <id> --ext-uuid eda --code "$(cat apply.js)"
+```
+
+- `--ext-uuid eda` 必须带，否则是"独立脚本权限"，拿不到完整 API。
+- 传入的代码视为**异步函数体**：用 `return` 返回结果，可以直接 `await`。
+- 大工程分批 invoke，`--timeout` 可调大到 1800000ms。
+
+### 6.9 验证（原理图三件套）
+
+1. **结构**：`schem.py erc` 过 FAIL=0（这是设计层）
+2. **EDA 原生**：`sch_Drc.check(true, false, true)` 返回空数组（这是画图层）
+3. **一致性**：`getNetlistFile` 导出的网表 vs `netlist.json` —— **逐网络比对**。这一步是唯一能证明"画出来的就是设计的"的手段，跳过它就等于假设落笔没出错。

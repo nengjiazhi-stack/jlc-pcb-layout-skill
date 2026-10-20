@@ -8,12 +8,15 @@
 
 ## 一、这个包是什么
 
-`jlc-pcb-layout` —— 在嘉立创EDA专业版（EasyEDA Pro）里按企业规范画 PCB Layout 的技能。
+`jlc-pcb-layout` —— 在嘉立创EDA专业版（EasyEDA Pro）里**按客户需求做原理图、再按企业规范画 PCB Layout** 的技能。
 
-把 6 份企业 PCB 规范（华为、爱默生、华硕、上海贝尔、通用、器件建库）拆成了三层可执行资产：
+原理图侧把 15 个常用功能块（电源/主控/RS485/CAN/USB-C/继电器/按键/LED/I2C/ADC/蜂鸣器）变成可执行网表 + 23 条 ERC 规则；PCB 侧把 6 份企业规范（华为、爱默生、华硕、上海贝尔、通用、器件建库）拆成量化条款。共六层可执行资产：
 
 | 层 | 位置 | 作用 | 外部依赖 |
 |---|---|---|---|
+| 需求层 | `jlc-pcb-layout/references/schematic-workflow.md` | 需求澄清清单 / 五步流水线 / 三道门禁 | 无 |
+| 电路层 | `assets/circuit-blocks.json` + `references/circuit-blocks.md` | 15 个功能块的参考电路与必接外围 | 无 |
+| 原理图校验 | `scripts/schem.py` | 需求→规格→网表→ERC→BOM→落笔脚本 | 仅 Python 3.8+，纯标准库 |
 | 规范层 | `jlc-pcb-layout/references/` | 条款化规范，带原始编号可回查 | 无 |
 | 计算层 | `jlc-pcb-layout/scripts/rules.py` | 载流线宽 / 电气间距 / 过孔 / 层数 / 阻抗 | 仅 Python 3.8+，纯标准库 |
 | 计划层 | `jlc-pcb-layout/scripts/plan.py` | 出摆件坐标计划 | 同上 |
@@ -58,13 +61,32 @@ cp -r jlc-pcb-layout ~/.codex/skills/jlc-pcb-layout
 
 ```bash
 cd ~/.codex/skills/jlc-pcb-layout
+python scripts/schem.py netlist examples/spec.example.json -o n.json --report
+python scripts/schem.py erc examples/netlist.example.json
+python scripts/schem.py erc examples/netlist.bad.json
 python scripts/rules.py width --current 3 --copper 1oz
-python scripts/plan.py assets/plan.example.json -o /tmp/p.json --report
+python scripts/plan.py assets/plan.example.json -o p.json --report
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
-python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN
 ```
 
-期望输出（用这四条判断装没装好）：
+期望输出（用这七条判断装没装好，顺序与上面一一对应）：
+
+```
+器件 76（其中待绑定 16/16），网络 57，功能块 11
+```
+
+```
+检查结果：FAIL 0 / WARN 0 / INFO 12
+```
+
+```
+检查结果：FAIL 4 / WARN 15 / INFO 2
+[FAIL] ✗ SCH-LED-RES       D1
+[FAIL] ✗ SCH-RELAY-FLYBACK  K1
+```
+
+> 后两条 ERC 是**成对设计**：成品网表必须干净，反面样例必须报 4 个 FAIL。只跑前者等于没测——检查器永远返回 0 违规也能"通过"。
+
 
 ```
 需求：3.0A / 1oz / ΔT=10.0℃
@@ -87,9 +109,9 @@ python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN
         5 颗本应共线，C5 偏离基准线 22mil（基准 500mil，容差 12mil）
 ```
 
-第三条 **FAIL 1 是正常的**——`snapshot.demo.json` 是故意埋了缺陷的示例板，用来演示检查器能抓到短路。`examples/snapshot.demo.fixed.json` 是修好的版本，跑它是 `FAIL 0 / WARN 6`。
+`snapshot.demo.json` 的 **FAIL 1 是正常的**——它是故意埋了缺陷的示例板（VDD×GND 短路），用来演示检查器能抓到。修好的版本 `snapshot.demo.fixed.json` 跑出来是 `FAIL 0 / WARN 6`。`netlist.bad.json` 的 4 个 FAIL 同理，是反面样例（LED 无限流、线圈无续流、TVS 选小、CC 缺下拉）。
 
-第四条里的 `AEST-*` 也是**故意做的反面样例**（对齐、间距、朝向、角度各埋一条），同样不是装坏了。
+**这些 FAIL 都不是装坏了**，而是"检查器真的会报错"的证据。如果反面样例跑出来 0 违规，说明装坏了。
 
 Python 找不到时用 `python3`，或告知用户需要 Python 3.8+。
 
@@ -129,9 +151,13 @@ jlc-pcb-layout/
   INSTALL.md               同上说明（随技能一起装）
   agents/openai.yaml       Codex 界面显示名与默认提示词
   assets/
-    constraints.json       全部数值约束，唯一真源，每节带条款出处
+    constraints.json       全部数值约束，唯一真源，含 schematic 节
+    circuit-blocks.json    15 个功能块的可执行定义
     plan.example.json      计划文件示例
   references/
+    schematic-workflow.md  需求 → 原理图 工作流（澄清/五步/门禁/交付物）
+    circuit-blocks.md      15 个功能块参考电路（组成/参数/常见错误）
+    schematic-rules.md     原理图规范 + 23 条 ERC 判据 + 数值表
     layout-rules.md        布局规范
     routing-rules.md       布线规范（含走线二十条）
     stackup-and-impedance.md  叠层与阻抗
@@ -140,11 +166,17 @@ jlc-pcb-layout/
     eda-execution.md       两条执行通道 + 落笔顺序 + 已知坑
     layout-plan.md         计划文件 JSON 规格
   scripts/
+    schem.py               原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
     rules.py               六个计算子命令
     plan.py                布局坐标计划生成器
     check.py               规范符合性检查器
   examples/
     walkthrough.md         60×45 四层板完整走查（含真实输出）
+    walkthrough-schematic.md  从客户一句话到可投板原理图的走查（含真实输出）
+    req.example.txt        客户需求原文样例
+    spec.example.json      成品设计规格
+    netlist.example.json   成品网表（76 器件 / 57 网络，ERC FAIL 0）
+    netlist.bad.json       反面网表（4 FAIL / 15 WARN）
     snapshot.demo.json     故意埋缺陷的快照（FAIL 1 / WARN 14）
     snapshot.demo.fixed.json  修好后的快照（FAIL 0 / WARN 6）
     snapshot.aesthetics.json  整洁度反面样例（AEST-ALIGN/PITCH/ROT/ANGLE 各一条）

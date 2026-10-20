@@ -1,4 +1,4 @@
 interface:
   display_name: "JLC PCB Layout"
-  short_description: "规范驱动的嘉立创EDA PCB布局布线：算约束、出坐标、落笔、验证"
-  default_prompt: "Use $jlc-pcb-layout to lay out a PCB in EasyEDA Pro (嘉立创EDA专业版): derive rules from the bundled enterprise specs, generate a placement plan, write it to the canvas, then verify with check.py and DRC."
+  short_description: "客户需求→原理图网表+ERC，再按规范做嘉立创EDA PCB布局布线"
+  default_prompt: "Use $jlc-pcb-layout for hardware design in EasyEDA Pro (嘉立创EDA专业版). For a new board: turn the customer's functional requirements into a spec and netlist with scripts/schem.py, run ERC, then do PCB layout via scripts/plan.py and verify with scripts/check.py. Never invent LCSC part numbers."
