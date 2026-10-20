@@ -169,7 +169,6 @@ install.ps1                Windows 安装脚本
 install.sh                 macOS/Linux 安装脚本
 jlc-pcb-layout/
   SKILL.md                 技能主入口（frontmatter + 执行流水线）
-  INSTALL.md               同上说明（随技能一起装）
   agents/openai.yaml       Codex 界面显示名与默认提示词
   assets/
     constraints.json       全部数值约束，唯一真源，含 schematic 节

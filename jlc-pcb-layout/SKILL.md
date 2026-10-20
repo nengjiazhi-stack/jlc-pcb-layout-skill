@@ -331,7 +331,7 @@ python scripts/schem.py erc examples/netlist.bad.json                           
 python scripts/schem.py chips                                                        # 应见 5 颗，其中 1 颗不可套用
 ```
 
-八条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
+十条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
 
 
 ## 红线
@@ -384,7 +384,7 @@ examples/
   snapshot.decap.ok.json     正例：去耦 1.8mm，应通过
   snapshot.decap.bad.json    反例：去耦 8.1mm，必须报 FAIL
   snapshot.demo.json         有典型毛病的板子快照（喂 check.py 看报什么）
-  snapshot.demo.fixed.json   回修后的同一块板（FAIL 0，剩 5 条 WARN）
+  snapshot.demo.fixed.json   回修后的同一块板（FAIL 0 / WARN 6 / UNKNOWN 2，UNKNOWN 明确表示"没查"）
   snapshot.aesthetics.json   整洁度反面样例（对齐/间距/朝向/角度各一条，另含不该报的交错双排）
   snapshot.placement.json    元器件摆放专项反面样例（FAIL 0 / WARN 10，PL-* 八类各中一条）
 ```

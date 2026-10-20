@@ -2,6 +2,8 @@
 
 给 AI 用的**嘉立创EDA 专业版**硬件设计技能：从一句客户需求出发做原理图，再从网表一路做到可投板的 PCB Layout。
 
+> **作用域只有立创EDA 专业版。** 不含 KiCad / Altium / PADS 等任何其它 EDA 的适配、转换或示例；执行层的每一行代码都只对嘉立创EDA 的 API 与 CLI 成立。
+
 面向 Codex / WorkBuddy 等 Agent 宿主。装上之后说「客户要个 4 路继电器控制板，24V 供电，带 485」或者「3A 电流在 1oz 铜上要多少线宽」，它会去跑脚本出网表、查规范数值、生成坐标计划、跑检查器，而不是凭记忆编数字和料号。
 
 ---
@@ -181,13 +183,13 @@ python scripts/schem.py netlist spec.json --chip rs485=sp3485 --chip power_ldo=a
 jlc-pcb-layout-skill/
 ├── INSTALL.md              给 Agent 看的安装指令
 ├── install.sh / install.ps1
-├── jlc-pcb-layout/         ← 技能本体
-│   ├── SKILL.md
-│   ├── references/         原理图工作流/功能块/ERC 判据 + 6 份规范转写 + 执行手册
-│   ├── scripts/            schem.py / rules.py / plan.py / check.py
-│   ├── assets/             constraints.json（数值唯一真源）+ circuit-blocks.json
-│   └── examples/           需求样例、成品 spec/netlist、反面 netlist、4 个 PCB 快照、两份走查
-└── test-cases/             4 个真实 KiCad 原理图（未启用的素材，见下）
+└── jlc-pcb-layout/         ← 技能本体
+    ├── SKILL.md
+    ├── agents/openai.yaml  Codex 入口：显示名与默认提示词
+    ├── references/         原理图工作流/功能块/ERC 判据 + 6 份规范转写 + 执行手册
+    ├── scripts/            schem.py / rules.py / plan.py / check.py
+    ├── assets/             constraints.json（数值唯一真源）+ circuit-blocks.json
+    └── examples/           需求样例、成品 spec/netlist、反面 netlist、6 个 PCB 快照、两份走查
 ```
 
 阈值全部集中在 `assets/constraints.json`（原理图部分在 `schematic` 节），觉得哪个太严太松直接改数字，不用改代码。功能块在 `assets/circuit-blocks.json`，加块的方法见 `references/circuit-blocks.md` 末节。
@@ -199,7 +201,7 @@ jlc-pcb-layout-skill/
 - **ERC 查不出全部。** 它只查结构性错误（悬空、缺失、极性、数值越界）。查不出：选型是否合适、时序是否满足、环路是否稳定、EMC 是否过关。这些必须人看。
 - **落笔只保证逻辑连通。** `playbook` 生成的脚本用"每个引脚拉一段带网络名的短线"建立连接，同名即连通。走线走向要人工整理——逻辑连通可验证，好看不可验证。
 - **不装 CLI 也能用前两层。** 只能算数值、出网表、跑 ERC、出 BOM，最后落笔得自己在画布上点。
-- **`test-cases/` 目前不被任何脚本读取。** 4 个真实开源原理图（CH340G USB-TTL、TinyUSB-CH340X、STM32F103C8，跨 KiCad 4/6/8 三代），是给「KiCad 工程 → 网表」功能预留的素材。中间缺一层 `.kicad_sch → netlist.json` 的转换（`netlist` 的输入契约已就绪）。
+- **只做立创EDA 专业版，不做通用 EDA。** 落笔用的 `sch_*` / `pcb_*` API、10mil 原理图栅格、25mil PCB 栅格、A4 图幅 1170×825、`lceda-pro` / `easyeda` CLI 全部只对嘉立创EDA专业版成立。换到 KiCad、Altium、PADS 等工具，判据层（数值计算、ERC、网表）仍可读，但执行层一行都用不了——本仓库不提供、也不打算提供其它 EDA 的适配。
 
 ## 依赖
 

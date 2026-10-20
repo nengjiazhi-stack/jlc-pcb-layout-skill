@@ -264,6 +264,7 @@ const violations = await eda.sch_Drc.check(true, false, true);  // 明细（分�
 const passed     = await eda.sch_Drc.check(true, false, false); // 布尔
 
 // 网表导出（比对用）
+// 'Protel2' 是立创EDA 内置的网表导出格式名，不是外部工具；无需装任何第三方软件
 const f = await eda.sch_ManufactureData.getNetlistFile('BOARD_NET', 'Protel2');
 const txt = await f.text();   // 必须 await
 ```
