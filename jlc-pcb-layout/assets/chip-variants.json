@@ -1,0 +1,264 @@
+{
+  "_meta": {
+    "purpose": "芯片实例层：把拓扑块的主器件落到具体型号，带真实引脚号、LCSC 与块级布局约束。拓扑块回答“这个功能要接什么”，本文件回答“这颗芯片的第几脚”。",
+    "schema": "variants.<id> = {for_block, fills_kind, name, mpn, package, lcsc, lcsc_status, pins, pins_partial, caveats, pcb_layout, source, origin, verified, blocked_by}",
+    "attribution": "部分字段转录自 easyeda-agent-open（MIT License，Copyright (c) 2026 zhoushoujianwork and contributors）的 internal/blocks/data/*.json 与 .agents/skills/easyeda-agent/references/pcb-design-rules.md。原文是供人读的散文描述，本文件逐条核对后转成结构化字段，每条保留 origin 可回查。",
+    "rules": [
+      "只收能核对到 datasheet 引脚号的型号；核对不了的 lcsc 留 null 并标 need_select，不许填猜的料号。",
+      "pins 只写确定对得上的脚；对不上的不猜，靠 pins_partial + 引擎报 UNKNOWN。",
+      "variant 与块的引脚名不符时不许硬套（见 blocked_by），宁可报错也不生成错网表。",
+      "pcb_layout 里的 must 项由 check.py 的 BLK-* 规则消费；判定不了的要报 UNKNOWN，不许沉默跳过。"
+    ]
+  },
+  "variants": {
+    "sp3485": {
+      "for_block": "rs485",
+      "fills_kind": "IC",
+      "name": "SP3485",
+      "mpn": "SP3485EN",
+      "package": "SOIC-8",
+      "lcsc": null,
+      "lcsc_status": "need_select",
+      "pins": {
+        "RO": "1",
+        "RE": "2",
+        "DE": "3",
+        "DI": "4",
+        "GND": "5",
+        "A": "6",
+        "B": "7",
+        "VCC": "8"
+      },
+      "pins_partial": false,
+      "caveats": [
+        "A/B 命名与 Modbus/TIA 规范相反：芯片 A 是非反相端，Modbus 规范里 A 指反相端。丝印必须警示，否则现场 A/B 接反通不了。",
+        "RE 低有效。本块把 RE 与 DE 并到同一网络（高=发送、低=接收），代价是失去独立接收使能；要做总线仲裁需拆开单控。",
+        "同 pinout 的 MAX3485（3.3V）可直接替换，换料不必改网表。"
+      ],
+      "pcb_layout": [
+        {
+          "rule": "decap-adjacency",
+          "target": "VCC 去耦 100nF",
+          "constraint": "紧贴 VCC 脚，供电环路短",
+          "value": "<=2mm",
+          "severity": "must"
+        },
+        {
+          "rule": "tvs-at-connector",
+          "target": "总线 TVS（SM712 类）",
+          "constraint": "紧贴端子入口，地回路短、直接回 GND 平面",
+          "value": "<=5mm",
+          "severity": "must"
+        },
+        {
+          "rule": "bias-pair",
+          "target": "失效保护偏置两电阻",
+          "constraint": "A 上拉 / B 下拉成对装或成对不装；整条总线只允许一处极化（通常主站），从站默认不装",
+          "value": "",
+          "severity": "must"
+        },
+        {
+          "rule": "term-endpoint",
+          "target": "120Ω 终端",
+          "constraint": "只在总线两个物理末端闭合，中间节点加了会把总线负载压垮",
+          "value": "",
+          "severity": "must"
+        },
+        {
+          "rule": "common-ground",
+          "target": "总线端子第三脚",
+          "constraint": "差分对之外要带一根 Common，且整条总线单点接地",
+          "value": "",
+          "severity": "should"
+        }
+      ],
+      "source": "SP3485 datasheet Rev 2.0.2（MaxLinear）第 1 页引脚图、第 2 页真值表；MODBUS over Serial Line V1.02 §3.4.5 终端 / §3.4.6 极化 / §3.6 电缆与 Common",
+      "origin": "easyeda-agent-open::block.sp3485_rs485_halfduplex",
+      "verified": "引脚号已按 datasheet 核对（8/8）。LCSC 未提供，须在立创商城选型后回填 lcsc 才允许生成落笔脚本。"
+    },
+    "ams1117_33": {
+      "for_block": "power_ldo",
+      "fills_kind": "IC",
+      "name": "AMS1117-3.3",
+      "mpn": "AMS1117-3.3",
+      "package": "SOT-223",
+      "lcsc": "C6186",
+      "lcsc_status": "sourced",
+      "pins": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "pins_partial": false,
+      "caveats": [
+        "SOT-223 散热片与 2 脚同属 VOUT，库内常编号为 4。2 脚与散热片必须同连 3V3，否则散热片悬空、满载发热。",
+        "标称 1A 是受散热限制的，不是保证。压差 1.1V 典型 / 1.3V 最大是在 0.8A 条件下测的，超过 0.8A 压差更大，5V 输入余量必须按实际负载重算。",
+        "输出电容：手册明确 22µF 固体钽可保证全条件稳定；换 22µF 陶瓷不是等价替代，须校核有效容量与 ESR，并做负载瞬态测试。"
+      ],
+      "pcb_layout": [
+        {
+          "rule": "thermal-copper",
+          "target": "VOUT 散热片",
+          "constraint": "散热片与散热过孔只能接 VOUT 同网铜层，可隔着介质向 GND 平面传热；严禁把 VOUT 散热焊盘或过孔电连到 GND（等于把输出短路到地）",
+          "value": "按 PD=(VIN−VOUT)×IOUT、TJ≤125°C 验算铜面积",
+          "severity": "must"
+        },
+        {
+          "rule": "decap-adjacency",
+          "target": "输入 / 输出电容",
+          "constraint": "输入电容贴 VIN、输出电容贴 VOUT，回路短",
+          "value": "<=2mm",
+          "severity": "must"
+        }
+      ],
+      "source": "AMS1117 datasheet（Advanced Monolithic Systems）第 1 页引脚定义、第 3 页压差、第 4 页稳定性与典型电路、第 5 页固定版与散热说明；LCSC C6186",
+      "origin": "easyeda-agent-open::block.ams1117_ldo_3v3",
+      "verified": "引脚号 1=GND / 2=VOUT / 3=VIN 已与 datasheet 核对，且与本块 IC 的既有命名一致（identity 映射）。LCSC C6186 取自其 source 字段原文。"
+    },
+    "sy8089": {
+      "for_block": "power_buck",
+      "fills_kind": "IC",
+      "name": "SY8089A",
+      "mpn": "SY8089A1AAC",
+      "package": "TSOT-23-5",
+      "lcsc": null,
+      "lcsc_status": "need_select",
+      "pins": {
+        "VIN": "4",
+        "SW": "3",
+        "GND": "2",
+        "FB": "5",
+        "EN": "1"
+      },
+      "pins_partial": false,
+      "caveats": [
+        "SY8089 的开关脚在 datasheet 里叫 LX，本块的逻辑名是 SW，是同一根脚。",
+        "Vref 0.6V：3.3V 输出取 45.3k/10k 分压得 3.32V。改输出电压必须重算分压，本块的默认 3.3k/10k 是另一组值，套用前先对一遍。",
+        "2A 同步 buck，输入 5V 时电感取 2.2µH。电池直供（VSYS 可低到 3.0V）时压差与占空比都变，要重核。"
+      ],
+      "pcb_layout": [
+        {
+          "rule": "hot-loop",
+          "target": "Cin → 高边开关 → 低边开关 → 回 Cin",
+          "constraint": "高 di/dt 回路面积压到最小，Cin 与 IC 的 IN/GND 同层紧贴（注意：这个回路不含电感，电感电流是连续的）",
+          "value": "Cin 到 IN/GND <=150mil，同层",
+          "severity": "must"
+        },
+        {
+          "rule": "sw-node-small",
+          "target": "SW/LX 铜面",
+          "constraint": "SW 是高 dV/dt 干扰源，铜面要小、远离敏感信号与反馈走线；它不是要缩小的 di/dt 回路",
+          "value": "",
+          "severity": "must"
+        },
+        {
+          "rule": "fb-tap",
+          "target": "FB 分压取样点",
+          "constraint": "从输出电容焊盘处独立引出，不在电感与电容之间的任意中间点取样；FB 走线远离开关节点",
+          "value": "",
+          "severity": "must"
+        }
+      ],
+      "source": "SY8089A datasheet（Silergy）2A 同步 buck 典型应用：Vref 0.6V、FB 分压、2.2µH、输入输出陶瓷电容",
+      "origin": "easyeda-agent-open::block.sy8089_buck_3v3",
+      "verified": "引脚号按其块内 note 的 sch read 实测记录（1=EN 2=GND 3=LX 4=IN 5=FB）转录；未独立核对 datasheet 封装图，首次用前请对一眼。"
+    },
+    "usb_c_16p": {
+      "for_block": "usb_typec_ufp",
+      "fills_kind": "J",
+      "name": "USB-C 16P 母座",
+      "mpn": "",
+      "package": "USB-C-16P-SMD",
+      "lcsc": null,
+      "lcsc_status": "need_select",
+      "pins": {
+        "VBUS": "A4",
+        "GND": "A1",
+        "CC1": "A5",
+        "CC2": "B5",
+        "DP": "A6",
+        "DN": "A7"
+      },
+      "pins_partial": true,
+      "caveats": [
+        "VBUS 是 A4B9 与 B4A9 两组焊盘，GND 是 A1B12 与 B1A12 两组，实际都要连；本表只写了主脚号，落笔时按库的实际焊盘名补齐。",
+        "DP1/DP2（A6/B6）与 DN1/DN2（A7/B7）必须在连接器焊盘处合并成正反插同一对，stub 越短越好，否则高速眼图会烂。",
+        "SBU1/SBU2 受电设备不用，明确标 NC，不要悬空留铜。"
+      ],
+      "pcb_layout": [
+        {
+          "rule": "edge-placement",
+          "target": "连接器本体",
+          "constraint": "靠板边，插口朝外，壳体允许突出板框",
+          "value": "edge",
+          "severity": "must"
+        },
+        {
+          "rule": "esd-adjacency",
+          "target": "ESD 阵列与 VBUS TVS",
+          "constraint": "置于连接器焊盘旁，信号先过 ESD 再进板",
+          "value": "<=5mm",
+          "severity": "must"
+        },
+        {
+          "rule": "pair-merge-stub",
+          "target": "DP1+DP2 / DN1+DN2",
+          "constraint": "正反插对在焊盘处合并，两段 stub 等长且最短",
+          "value": "<=1mm",
+          "severity": "must"
+        }
+      ],
+      "source": "USB Type-C Cable and Connector Specification R2.0（16P 母座焊盘定义）；USB-C Rd 5.1k 见 USB Type-C R2.0 §4.5.1.2.3",
+      "origin": "easyeda-agent-open::block.usbc_ufp_power_or",
+      "verified": "焊盘名转自其块内 note 的 sch read 实测记录；DP/DN 是双焊盘，标 pins_partial，落笔前必须按库实际焊盘补齐（引擎会报 UNKNOWN）。"
+    },
+    "esp32s3_wroom1": {
+      "for_block": "mcu_min",
+      "fills_kind": "MCU",
+      "name": "ESP32-S3-WROOM-1",
+      "mpn": "ESP32-S3-WROOM-1-N8",
+      "package": "Module-SMD",
+      "lcsc": null,
+      "lcsc_status": "need_select",
+      "blocked_by": "本块的 mcu_min 按「外部晶振 + SWD 调试口 + NRST/BOOT0」建模，而 ESP32-S3 模组内建晶振、调试是 JTAG 不是 SWD、复位脚叫 EN、启动脚叫 IO0 且是 strapping。引脚名对不上，硬套会生成错网表。要用这颗，请新建 esp32_minsys 块（源数据见 origin），不要套 mcu_min。",
+      "pins": {
+        "3V3": "2",
+        "GND": "1",
+        "EN": "3",
+        "IO0": "27"
+      },
+      "pins_partial": true,
+      "caveats": [
+        "模组方案的真正价值是省掉晶振、flash、RF matching 和天线设计；但这些省掉的东西变成模组内部的固定约束，不能按裸芯片的思路改。",
+        "天线端必须伸出板边或下方全层禁铜：天线区任何一层有铜都会失谐，这是 must 级。",
+        "EN 的 RC（10k + 1µF）保证 3V3 稳定后才释放复位；IO0 需 10k 上拉保证默认从 flash 启动。"
+      ],
+      "pcb_layout": [
+        {
+          "rule": "antenna-keepout",
+          "target": "模组天线端",
+          "constraint": "置于板边并伸出板外，或下方全层禁铜（顶/底 no-pour + 内层 no-inner-electrical）",
+          "value": "all-layers keep-out",
+          "severity": "must"
+        },
+        {
+          "rule": "decap-adjacency",
+          "target": "100nF 高频去耦",
+          "constraint": "紧贴模组 3V3 供电脚",
+          "value": "<=2mm",
+          "severity": "must"
+        },
+        {
+          "rule": "bulk-cap",
+          "target": "10µF 大电容",
+          "constraint": "靠近模组供电入口，压 WiFi 发射瞬态（峰值可到约 500mA）",
+          "value": "",
+          "severity": "should"
+        }
+      ],
+      "source": "ESP32-S3-WROOM-1 datasheet（Espressif）模组引脚与推荐外围电路",
+      "origin": "easyeda-agent-open::block.esp32s3_wroom1_module",
+      "verified": "引脚号未逐条核对（模组有 40+ 脚，本表只覆盖 4 个），且与 mcu_min 块结构不兼容，故标记 blocked_by，引擎会拒绝套用。"
+    }
+  }
+}

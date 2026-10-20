@@ -1,4 +1,4 @@
 interface:
   display_name: "JLC PCB Layout"
-  short_description: "客户需求→原理图网表+ERC，再按规范做嘉立创EDA PCB布局布线"
-  default_prompt: "Use $jlc-pcb-layout for hardware design in EasyEDA Pro (嘉立创EDA专业版). For a new board: turn the customer's functional requirements into a spec and netlist with scripts/schem.py, run ERC, then do PCB layout via scripts/plan.py and verify with scripts/check.py. Never invent LCSC part numbers."
+  short_description: "客户需求→原理图网表+ERC，按规范做嘉立创EDA PCB布局布线，芯片实例带真实脚号与料号"
+  default_prompt: "Use $jlc-pcb-layout for hardware design in EasyEDA Pro (嘉立创EDA专业版). Pipeline: customer requirements -> scripts/schem.py spec/netlist (optionally --chip 块=型号 for real pin maps) -> erc -> scripts/plan.py for PCB layout -> scripts/check.py --netlist --gate for the verdict. UNKNOWN means a check did not run; it is NOT a pass. Never invent LCSC part numbers."

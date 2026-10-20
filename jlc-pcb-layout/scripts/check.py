@@ -44,7 +44,7 @@ GND_RE = re.compile(r"^(A?GND|DGND|PGND|GNDA|GNDD|VSS|PE|EGND|0V)$", re.I)
 PWR_RE = re.compile(r"^(VIN|VBUS|VSYS|VBAT|VCC|VDD\d*|AVDD|DVDD|PVDD|VOUT|VO|VREF|[+-]?\d+V\d*)$", re.I)
 ANCHOR_PREFIX = ("J", "USB", "DC", "RJ", "CN", "MH", "H", "P")
 
-SEV_ORDER = {"FAIL": 0, "WARN": 1, "INFO": 2}
+SEV_ORDER = {"FAIL": 0, "WARN": 1, "UNKNOWN": 2, "INFO": 3}
 
 
 def load_constraints() -> dict:
@@ -92,8 +92,12 @@ class Report:
     def fail(self, rule, where, msg, fix=""):
         self.add("FAIL", rule, where, msg, fix)
 
+    def unknown(self, rule, where, msg, fix=""):
+        """UNKNOWN = 这条没查成。测不到不等于通过，必须显式报出来。"""
+        self.add("UNKNOWN", rule, where, msg, fix)
+
     def counts(self):
-        c = {"FAIL": 0, "WARN": 0, "INFO": 0}
+        c = {"FAIL": 0, "WARN": 0, "UNKNOWN": 0, "INFO": 0}
         for i in self.items:
             c[i["severity"]] += 1
         return c
@@ -123,7 +127,7 @@ def check_board(snap: dict, con: dict, rep: Report):
 
     # ---- 1) 板框与出框
     if not W or not H:
-        rep.info("TY-6.1.4", "board", "缺板框尺寸，边距与出框检查跳过",
+        rep.unknown("TY-6.1.4", "board", "缺板框尺寸，边距与出框检查跳过",
                  "补 board.width_mil / height_mil 或先跑 pcb outline get")
     else:
         for c in comps:
@@ -214,7 +218,7 @@ def check_board(snap: dict, con: dict, rep: Report):
     ics = [c for c in comps if prefix(c["designator"]) == "U" and c.get("pads")]
     caps = [c for c in comps if prefix(c["designator"]) == "C" and c.get("pads")]
     if not ics:
-        rep.info("TY-6.2.11", "去耦", "没有带 pads 的 U 器件，去耦检查跳过",
+        rep.unknown("TY-6.2.11", "去耦", "没有带 pads 的 U 器件，去耦检查跳过",
                  "导出时加 --include-pads")
     else:
         limit = con["placement"]["decoupling"]["four_layer_max_mil"] if layers >= 4 \
@@ -304,7 +308,7 @@ def check_board(snap: dict, con: dict, rep: Report):
     hi = con["placement"]["height"]
     with_h = [c for c in comps if c.get("height_mm") is not None]
     if not with_h:
-        rep.info("PL-HEIGHT", "height", "器件缺 height_mm → 高度与三维干涉检查跳过",
+        rep.unknown("PL-HEIGHT", "height", "器件缺 height_mm → 高度与三维干涉检查跳过",
                  "导出时补 height_mm（封装库或 BOM 高度），否则无法判定高器件遮挡")
     else:
         for c in with_h:
@@ -361,7 +365,7 @@ def check_board(snap: dict, con: dict, rep: Report):
     if traces:
         check_traces(snap, con, rep, traces, vias, comps)
     else:
-        rep.info("FAB-DATA", "traces", "没有 traces 数据 → 3W/直角/悬空/线宽一致性检查跳过",
+        rep.unknown("FAB-DATA", "traces", "没有 traces 数据 → 3W/直角/悬空/线宽一致性检查跳过",
                  "导出 `pcb line list --json` 后并入 snapshot")
 
     # ---- 10) 过孔孔厚比（有板厚才判定）
@@ -433,7 +437,7 @@ def check_board(snap: dict, con: dict, rep: Report):
     fid = snap.get("fiducials")
     fcfg = con.get("fiducial", {}).get("dfm", {})
     if fid is None:
-        rep.info("PL-FID", "fiducials", "无 fiducials 数据 → 基准点检查跳过",
+        rep.unknown("PL-FID", "fiducials", "无 fiducials 数据 → 基准点检查跳过",
                  "从 EDA 导出基准点图元并并入 snapshot；拼板时基准点放在工艺边上")
     else:
         fmin = fcfg.get("count_min", 3)
@@ -459,7 +463,7 @@ def check_board(snap: dict, con: dict, rep: Report):
     if not board.get("outline") and not (W and H):
         gaps.append("无 outline → 边距/回流路径判断降级")
     if gaps:
-        rep.info("FAB-DATA", "dataset", "；".join(gaps), "补齐后重跑，别把 INFO 当通过")
+        rep.unknown("FAB-DATA", "dataset", "；".join(gaps), "补齐后重跑；UNKNOWN 不能算通过")
 
 
 def _pt_seg_dist(px, py, seg) -> float:
@@ -684,7 +688,7 @@ def check_aesthetics(con, rep, comps, traces):
     """
     ast = con.get("aesthetics")
     if not ast:
-        rep.info("AEST-DATA", "aesthetics", "constraints.json 没有 aesthetics 节，整洁度检查跳过")
+        rep.unknown("AEST-DATA", "aesthetics", "constraints.json 没有 aesthetics 节，整洁度检查跳过")
         return
 
     al = ast.get("alignment", {})
@@ -808,6 +812,120 @@ def check_aesthetics(con, rep, comps, traces):
              "需要时从 EDA 导出丝印层/铺铜列表并入快照")
 
 
+# ---------------------------------------------------------------- 块级布局约束
+
+DIST_RE = re.compile(r"<=\s*([\d.]+)\s*(mm|mil)", re.I)
+
+
+def _limit_mil(value):
+    """从 "<=2mm" / "<= 150mil" 里取阈值，统一换成 mil。取不到返回 None。"""
+    m = DIST_RE.search(value or "")
+    if not m:
+        return None
+    v, unit = float(m.group(1)), m.group(2).lower()
+    return v * MIL_PER_MM if unit == "mm" else v
+
+
+def check_block_constraints(snap, nl, rep):
+    """消费网表里带过来的块级布局约束（来自 chip-variants.json 的 pcb_layout）。
+
+    只自动判能落到几何上的两条：去耦贴 IC、保护器件贴连接器。
+    其余（散热铜、热回路、天线禁铜、偏置成对、极性丝印…）一律报 UNKNOWN 汇总，
+    绝不静默当作满足 —— 这是本函数存在的全部意义。
+    """
+    cons = nl.get("layout_constraints") or []
+    if not cons:
+        rep.info("BLK-NA", "netlist",
+                 "网表没有块级布局约束（未套芯片实例，或实例未带 pcb_layout）",
+                 "用 `schem.py netlist --chip 块=型号` 生成带约束的网表")
+        return
+
+    by_ref = {str(c.get("designator", "")).upper(): c for c in snap.get("components", [])}
+    inst: dict = {}
+    for p in nl.get("parts", []):
+        inst.setdefault((p.get("block"), p.get("instance")), []).append(p)
+
+    auto_ok, unsupported = 0, {}
+
+    def members(block, instance, kinds):
+        out = []
+        for p in inst.get((block, instance), []):
+            if p.get("kind") in kinds and str(p.get("ref", "")).upper() in by_ref:
+                out.append(by_ref[str(p["ref"]).upper()])
+        return out
+
+    for c in cons:
+        rule, val = c.get("rule"), c.get("value")
+        block, instance, ref = c.get("block"), c.get("instance"), str(c.get("ref", ""))
+        where = f"{ref}/{rule}"
+        limit = _limit_mil(val)
+        sev = "FAIL" if c.get("severity") == "must" else "WARN"
+
+        if rule == "decap-adjacency" and limit:
+            target = by_ref.get(ref.upper())
+            caps = members(block, instance, ("C",))
+            if not target or not caps:
+                rep.unknown("BLK-DECAP", where,
+                            f"{'主器件' if not target else '去耦电容'}不在快照里，"
+                            f"“{val}”这条无法判定",
+                            "把该块的真实器件与位置导出到快照后再查")
+                continue
+            best = min(caps, key=lambda x: gap(bbox(x), bbox(target)))
+            g = gap(bbox(best), bbox(target))
+            if g > limit:
+                rep.add(sev, "BLK-DECAP", where,
+                        f"{best['designator']} 到 {ref} 间距 {g / MIL_PER_MM:.2f}mm > "
+                        f"{limit / MIL_PER_MM:.1f}mm（{c.get('constraint', '')}）",
+                        "去耦挪到电源脚旁边；这比“摆整齐”优先，电气 > 美观")
+            else:
+                auto_ok += 1
+            continue
+
+        if rule in ("esd-adjacency", "tvs-at-connector") and limit:
+            conns = members(block, instance, ("J",))
+            prot = members(block, instance, ("TVS", "D", "ESD"))
+            if not conns or not prot:
+                rep.unknown("BLK-ESD", where,
+                            f"连接器或保护器件不在快照里，“{val}”这条无法判定",
+                            "导出该块全部器件位置后再查")
+                continue
+            best = min(prot, key=lambda x: min(gap(bbox(x), bbox(j)) for j in conns))
+            g = min(gap(bbox(best), bbox(j)) for j in conns)
+            if g > limit:
+                rep.add(sev, "BLK-ESD", where,
+                        f"{best['designator']} 到连接器间距 {g / MIL_PER_MM:.2f}mm > "
+                        f"{limit / MIL_PER_MM:.1f}mm（{c.get('constraint', '')}）",
+                        "保护器件必须贴在连接器焊盘旁，信号先过保护再进板")
+            else:
+                auto_ok += 1
+            continue
+
+        unsupported.setdefault(rule or "?", 0)
+        unsupported[rule or "?"] += 1
+
+    if auto_ok:
+        rep.info("BLK-AUTO", "layout_constraints", f"{auto_ok} 条带阈值的块级约束已自动判定通过")
+    if unsupported:
+        names = "、".join(f"{k}×{v}" for k, v in sorted(unsupported.items()))
+        rep.unknown("BLK-MANUAL", "layout_constraints",
+                    f"{sum(unsupported.values())} 条块级约束没有几何判据，只能人看图确认：{names}",
+                    "不要因为程序没报错就认为这些约束已满足；要判就得补可见性/丝印/铜面数据")
+
+
+def _run_erc(netlist_path):
+    """调同包的 schem.py 跑 ERC，拿回 counts。失败返回 None，由 gate 报 UNKNOWN。"""
+    import subprocess
+    schem = Path(__file__).resolve().with_name("schem.py")
+    if not schem.exists() or not Path(netlist_path).exists():
+        return None
+    try:
+        r = subprocess.run([sys.executable, str(schem), "erc", str(netlist_path), "--json"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return json.loads(r.stdout).get("counts")
+    except Exception:
+        return None
+
+
 def normalize(snap: dict) -> dict:
     """兼容 plan.py 的计划文件：把 meta.board_mil 映射成 board，并补齐缺省字段。"""
     if "board" not in snap and "meta" in snap:
@@ -820,12 +938,22 @@ def normalize(snap: dict) -> dict:
     return snap
 
 
+def _merge_counts(dst, src):
+    for k in ("FAIL", "WARN", "UNKNOWN", "INFO"):
+        dst[k] = dst.get(k, 0) + (src or {}).get(k, 0)
+    return dst
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="PCB Layout 规范符合性检查")
     ap.add_argument("snapshot", help="板子快照 JSON（也接受 plan.py 的计划文件）")
-    ap.add_argument("--min-severity", choices=["FAIL", "WARN", "INFO"], default="INFO")
+    ap.add_argument("--min-severity", choices=["FAIL", "WARN", "UNKNOWN", "INFO"], default="INFO")
     ap.add_argument("--json", action="store_true")
-    ap.add_argument("--strict", action="store_true", help="有 FAIL 时返回非零退出码")
+    ap.add_argument("--strict", action="store_true", help="有 FAIL 时返回 1")
+    ap.add_argument("--require-known", action="store_true",
+                    help="有 UNKNOWN 时返回 2：检查没跑全不算通过")
+    ap.add_argument("--netlist", help="网表 JSON：并入 ERC 与块级布局约束检查")
+    ap.add_argument("--gate", action="store_true", help="输出单一门禁判定（BLOCKED/INCOMPLETE/REVIEW/PASS）")
     args = ap.parse_args(argv)
 
     snap = normalize(json.loads(Path(args.snapshot).read_text(encoding="utf-8")))
@@ -833,26 +961,73 @@ def main(argv=None) -> int:
     rep = Report()
     check_board(snap, con, rep)
 
+    if args.netlist:
+        nl = json.loads(Path(args.netlist).read_text(encoding="utf-8"))
+        check_block_constraints(snap, nl, rep)
+
     keep = [i for i in rep.items if SEV_ORDER[i["severity"]] <= SEV_ORDER[args.min_severity]]
     keep.sort(key=lambda i: (SEV_ORDER[i["severity"]], i["rule"]))
     counts = rep.counts()
+    erc = _run_erc(args.netlist) if args.netlist else None
 
     if args.json:
-        print(json.dumps({"summary": counts, "items": keep}, ensure_ascii=False, indent=2))
+        out = {"summary": counts, "items": keep}
+        if args.netlist:
+            out["erc"] = erc
+        print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
-        icon = {"FAIL": "✗", "WARN": "!", "INFO": "·"}
-        print(f"检查结果：FAIL {counts['FAIL']} / WARN {counts['WARN']} / INFO {counts['INFO']}\n")
+        icon = {"FAIL": "✗", "WARN": "!", "UNKNOWN": "?", "INFO": "·"}
+        print(f"检查结果：FAIL {counts['FAIL']} / WARN {counts['WARN']} / "
+              f"UNKNOWN {counts['UNKNOWN']} / INFO {counts['INFO']}\n")
         for i in keep:
-            print(f"[{i['severity']:<4}] {icon[i['severity']]} {i['rule']:<14} {i['where']}")
+            print(f"[{i['severity']:<7}] {icon[i['severity']]} {i['rule']:<14} {i['where']}")
             print(f"        {i['issue']}")
             if i["fix"]:
                 print(f"        → {i['fix']}")
         if not keep:
             print("没有达到该严重度的条目。")
-        print("\n提示：INFO 表示数据不足、无法判定，不等于通过。")
+        print("\n提示：UNKNOWN = 这条没查成，不等于通过；INFO = 已知事实或已声明例外。")
 
+    # 门禁汇总：单一判定，避免“一堆数字自己解读”
+    verdict = None
+    if args.gate:
+        total = dict(counts)
+        if args.netlist:
+            if erc is None:
+                total["UNKNOWN"] = total.get("UNKNOWN", 0) + 1
+            else:
+                _merge_counts(total, erc)
+        if total.get("FAIL"):
+            verdict = "BLOCKED"
+        elif total.get("UNKNOWN") or (args.netlist and erc is None):
+            verdict = "INCOMPLETE"
+        elif total.get("WARN"):
+            verdict = "REVIEW"
+        else:
+            verdict = "PASS"
+
+        if not args.json:
+            print("\n=== 门禁汇总 ===")
+            print(f"{'ERC':<10} FAIL {erc.get('FAIL', 0) if erc else '—'} / "
+                  f"WARN {erc.get('WARN', 0) if erc else '—'} / INFO {erc.get('INFO', 0) if erc else '—'}"
+                  + ("" if erc else ("  （未提供网表，ERC 未跑）" if not args.netlist else "  （ERC 调用失败）")))
+            print(f"{'PCB':<10} FAIL {counts['FAIL']} / WARN {counts['WARN']} / "
+                  f"UNKNOWN {counts['UNKNOWN']} / INFO {counts['INFO']}")
+            print(f"{'判定':<10} {verdict}")
+            explain = {
+                "BLOCKED": "有 FAIL，物理上不能投板。",
+                "INCOMPLETE": "没有 FAIL，但有检查没跑成 —— 这不等于通过。",
+                "REVIEW": "无 FAIL 无 UNKNOWN，WARN 需人看图确认。",
+                "PASS": "全部检查跑完且无违规。",
+            }[verdict]
+            print(f"           {explain}")
+
+    if verdict:
+        return {"BLOCKED": 1, "INCOMPLETE": 2}.get(verdict, 0)
     if args.strict and counts["FAIL"] > 0:
         return 1
+    if args.require_known and (counts["UNKNOWN"] > 0 or (args.netlist and erc is None)):
+        return 2
     return 0
 
 

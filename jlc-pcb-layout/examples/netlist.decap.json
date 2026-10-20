@@ -1,0 +1,63 @@
+{
+  "project": "decap-rule-fixture",
+  "generated_by": "examples/netlist.decap.json —— 只含一个块实例 + 两条块级约束，用来单独验证 BLK-DECAP",
+  "note": "这不是完整网表，是规则夹具。配套 snapshot.decap.ok.json（1.8mm 通过）与 snapshot.decap.bad.json（8.1mm 报 FAIL）。",
+  "parts": [
+    {
+      "ref": "U4",
+      "kind": "IC",
+      "value": "SP3485",
+      "block": "rs485",
+      "instance": "RS485",
+      "variant": "sp3485",
+      "lcsc": null
+    },
+    {
+      "ref": "C9",
+      "kind": "C",
+      "value": "100nF",
+      "block": "rs485",
+      "instance": "RS485"
+    }
+  ],
+  "nets": {
+    "3V3": {
+      "pins": [
+        "U4.VCC",
+        "C9.1"
+      ],
+      "class": "power",
+      "voltage": 3.3
+    },
+    "GND": {
+      "pins": [
+        "U4.GND",
+        "C9.2"
+      ],
+      "class": "ground",
+      "voltage": 0
+    }
+  },
+  "layout_constraints": [
+    {
+      "block": "rs485",
+      "instance": "RS485",
+      "ref": "U4",
+      "rule": "decap-adjacency",
+      "target": "VCC 去耦 100nF",
+      "constraint": "紧贴 VCC 脚，供电环路短",
+      "value": "<=2mm",
+      "severity": "must"
+    },
+    {
+      "block": "rs485",
+      "instance": "RS485",
+      "ref": "U4",
+      "rule": "bias-pair",
+      "target": "失效保护偏置两电阻",
+      "constraint": "A 上拉 / B 下拉成对装或成对不装",
+      "value": "",
+      "severity": "must"
+    }
+  ]
+}

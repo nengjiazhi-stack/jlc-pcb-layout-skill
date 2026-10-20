@@ -20,19 +20,21 @@ description: 在嘉立创EDA专业版里按客户需求做原理图、再把 PCB
 |---|---|---|
 | 需求层 | 需求澄清清单、工作流门禁、选型纪律 | `references/schematic-workflow.md` |
 | 电路层 | 15 个功能块参考电路（含必接外围与常见错误） | `assets/circuit-blocks.json` + `references/circuit-blocks.md` |
+| 芯片实例层 | 5 颗具体型号：真实脚号 / 料号 / 块级布局约束 / 出处 | `assets/chip-variants.json` + `references/chip-variants.md` |
 | 原理图规则层 | 23 条 ERC 判据 + 数值表 | `references/schematic-rules.md` |
 | 规范层 | 六套企业规范的量化条款（带出处编号） | `references/layout-rules.md` 等 |
 | 计算层 | 载流/间距/过孔/阻抗 + 上拉/限流/负载电容/偏置/电感 | `scripts/rules.py`、`scripts/schem.py calc`、`assets/constraints.json` |
 | 执行层 | 网表生成、ERC、落笔脚本、布局计划、合规检查 | `scripts/schem.py`、`scripts/plan.py`、`scripts/check.py`、`references/eda-execution.md` |
 
-## 六条硬规矩
+## 七条硬规矩
 
 1. **不许凭记忆报工艺数值**。任何"线要多宽 / 间距多少 / 过孔多大 / 爬电多少 / 器件间距多少"的问题，先跑 `rules.py`，或查 `assets/constraints.json`。查不到就说不确定，并给出保守取值 + 标注假设。
 2. **不许凭记忆报电路数值**。上拉、限流电阻、晶振负载电容、RS485 偏置、buck 电感、TVS 档位，先跑 `schem.py calc`，或查 `constraints.json → schematic`。
 3. **不许编料号**。LCSC 编号只能来自立创商城实际检索。脚本没有 `lcsc` 就拒绝生成落笔代码（exit 2），`--allow-missing` 只用于先看布局，不是绕过门禁的手段。**编料号会造成批量买错料，是这类工具最贵的错误。**
 4. **不许凭感觉摆坐标**。所有 XY 必须来自 `plan.py` 生成的计划文件（或用户/结构图给定的锚点），并在计划里落盘后可追溯。禁止即兴 `x = 1000`。
 5. **不许乱序摆件**。摆器件必须按 `P0 → P6` 的档位顺序（见 `references/layout-rules.md` §11 与 `constraints.json → placement.placement_order`）：机械锁定件 → 功率热源 → 核心 IC → 就近器件（去耦/串阻/晶振）→ 敏感小信号 → 其余阻容 → 测试点/MARK/丝印。**前一档未锁定不得进入下一档。** 尤其是 P3 的就近器件，禁止为了"阵列好看"把它们从 IC 电源脚旁挪走——裁决顺序永远是**电气 > 结构 > 制造 > 整齐**。
-6. **不许无验证收工**。原理图阶段必须 ERC 过 FAIL=0 且 EDA 原生 `sch_Drc` 通过；PCB 阶段必须跑 `check.py` + `drc-check`。违规逐条回修或明确记录为"已接受的风险"。
+6. **不许把「没查」说成「通过」**。`check.py` 的 `UNKNOWN` 表示这条检查没跑成（缺 traces、缺高度、缺丝印、块级约束无几何判据）。有 UNKNOWN 时判定是 `INCOMPLETE`，**不是通过**。交付物里必须列出哪些项没查，不许只报 `FAIL 0`。
+7. **不许无验证收工**。原理图阶段必须 ERC 过 FAIL=0 且 EDA 原生 `sch_Drc` 通过；PCB 阶段必须跑 `check.py` + `drc-check`。违规逐条回修或明确记录为"已接受的风险"。
 
 ## 先判断任务模式
 
@@ -257,7 +259,7 @@ easyeda pcb report                         # 网络长度/差分偏斜
 ## 与其它技能的关系
 
 - 本 skill 负责**规范 + 计算 + 坐标 + 检查**（"画什么、画多宽、画在哪"）。
-- 若环境里装了 `easyeda-agent`，它负责**落笔执行**（CLI 动作集）；两者用同一个数据契约（mil、y-up、layer id），可直接对接。
+- **[easyeda-agent-open](https://github.com/yitengchun833-gif/easyeda-agent-open) / easyeda-agent 负责落笔执行**（Go daemon + `.eext` 扩展 + MCP + CLI）。本 skill 的 `eda-execution.md` 描述的就是这套 CLI，其中 7 个动作 id 已在其源码中逐个核实存在，**可直接对接，不用改代码**。装法、对接点、什么不该学它，见 `references/integration.md`。
 - 若装了 `easyeda-api`，可用 bridge 直接跑 `eda.pcb_*` JS —— 见 `references/eda-execution.md` 通道 B。
 - 若只要"设计文档套件"（任务书 / BOM / 原理图要点）而不画图，用 `jlc-pcb-design`。
 
@@ -278,10 +280,15 @@ python scripts/rules.py impedance --type microstrip|stripline|diff-microstrip|di
 python scripts/plan.py my_spec.json -o plan.json [--report] [--emit-steps steps.json] [--emit-sh] [--project <名>]
 
 # 检查
-python scripts/check.py snapshot.json [--min-severity FAIL|WARN|INFO] [--json] [--strict]
+python scripts/check.py snapshot.json [--min-severity FAIL|WARN|UNKNOWN|INFO] [--json] [--strict]
+python scripts/check.py snapshot.json --netlist nl.json              # 并入 ERC + 块级布局约束
+python scripts/check.py snapshot.json --netlist nl.json --gate        # 单一判定：BLOCKED/INCOMPLETE/REVIEW/PASS
+python scripts/check.py snapshot.json --require-known                 # 有 UNKNOWN 就返回 2
 
 # ---- 原理图（schem.py）----
 python scripts/schem.py blocks                              # 15 个功能块清单
+python scripts/schem.py chips [--for-block rs485]           # 5 颗芯片实例（型号/料号/引脚/约束）
+python scripts/schem.py netlist spec.json --chip rs485=sp3485 -o nl.json   # 套用芯片实例
 python scripts/schem.py spec --req 需求.txt -o spec.json    # 需求 → 设计规格（草稿，需人改）
 python scripts/schem.py netlist spec.json -o netlist.json --report
 python scripts/schem.py erc netlist.json [--strict] [--json] [--min-severity WARN]
@@ -302,7 +309,9 @@ python scripts/schem.py calc tvs      --vop 24
 python scripts/schem.py calc usb-cc
 ```
 
-`check.py` 覆盖 20 类：出框、板边净空、courtyard 间距、BGA 禁布、安装孔禁布、去耦距离（按最近 IC）、晶振距离、朝向一致性、**有极性件朝向与正交**、**同封装 IC 的 1 脚朝向**、**器件高度与高矮混放**、**电感间距与正交（车规）**、**重心平衡**、**连接器插拔净空**、**MARK 数量与分布**、悬空线头、直角/锐角、3W 与异网短路、过孔孔厚比、图面整洁度。数据缺就降级为 `INFO`，**不会假装通过**。
+`check.py` 覆盖 20 类：出框、板边净空、courtyard 间距、BGA 禁布、安装孔禁布、去耦距离（按最近 IC）、晶振距离、朝向一致性、**有极性件朝向与正交**、**同封装 IC 的 1 脚朝向**、**器件高度与高矮混放**、**电感间距与正交（车规）**、**重心平衡**、**连接器插拔净空**、**MARK 数量与分布**、悬空线头、直角/锐角、3W 与异网短路、过孔孔厚比、图面整洁度。数据缺就降级为 `UNKNOWN`（不是 INFO），`--gate` 判 `INCOMPLETE`，**不会假装通过**。
+
+带 `--netlist` 时另跑块级约束：`BLK-DECAP`（去耦贴 IC ≤2mm）、`BLK-ESD`（保护器件贴连接器 ≤5mm）能几何硬算；其余 `BLK-MANUAL` 汇总报 UNKNOWN —— **程序没报错不代表这些约束满足了**。
 
 ## 装在哪、先自检
 
@@ -313,12 +322,16 @@ cd ~/.codex/skills/jlc-pcb-layout
 python scripts/rules.py width --current 3 --copper 1oz    # 应输出 1.5mm / 3.2A
 python scripts/plan.py assets/plan.example.json -o p.json --report
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
+python scripts/check.py examples/snapshot.decap.ok.json  --netlist examples/netlist.decap.json   # BLK-DECAP 应通过
+python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json   # 应报 BLK-DECAP FAIL
 python scripts/schem.py netlist examples/spec.example.json -o n.json --report   # 应报 76 器件 / 57 网络
+python scripts/schem.py netlist examples/spec.example.json --chip rs485=sp3485 --chip power_ldo=ams1117_33 -o n2.json
 python scripts/schem.py erc examples/netlist.example.json                            # 应报 FAIL 0 / WARN 0
 python scripts/schem.py erc examples/netlist.bad.json                                # 反面样例，应报 FAIL 4
+python scripts/schem.py chips                                                        # 应见 5 颗，其中 1 颗不可套用
 ```
 
-五条都能跑通，说明 Python 3.9+ 环境、JSON 与相对路径都正常。后两条是**成对的自检**：好的必须干净、坏的必须报错——只测前者等于没测。
+八条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
 
 
 ## 红线
@@ -331,6 +344,8 @@ python scripts/schem.py erc examples/netlist.bad.json                           
 - 不绕过 ERC 的 FAIL 直接落笔。真要先看效果，就把 FAIL 逐条写进交付物并标注"未修复"。
 - 不擅自改客户的网表连接（删网络、并地、改上拉）。改之前说清改什么、为什么。
 - 不把"脚本跑完了"当"电路对了"。ERC 查不出选型、时序、环路稳定性、EMC。
+- **不把 UNKNOWN 报成 PASS**。缺数据就是没查，明确写进交付物；`FAIL 0` 单独出现不是合格证明。
+- **不猜引脚号**。芯片实例里没有的脚就是没有，走 `bind` 从 EDA 回读，或去对 datasheet，不许按顺序推。
 
 ## 文件索引
 
@@ -339,6 +354,8 @@ SKILL.md
 references/
   schematic-workflow.md      需求 → 原理图 工作流（澄清清单/五步/三道门禁/交付物/常见翻车）
   circuit-blocks.md          15 个功能块参考电路（组成/参数怎么算/常见错误/对应规则号）
+  chip-variants.md           芯片实例层：收录标准、5 颗的真实状态、怎么加新芯片、7 种布局约束的可检查性
+  integration.md             与执行层（easyeda-agent-open）对接：已验证事实、三个对接点、不吸收的四项
   schematic-rules.md         原理图规范 + 23 条 ERC 判据表 + 数值表
   layout-rules.md            布局规范（边距/分区/热/去耦/间距/朝向/**摆放顺序 P0→P6**/**高度**/**重心**/**可维护性**/**MARK**/**车规**/拼板）
   routing-rules.md           布线规范（载流/间距/过孔/平面/20 条走线规则）
@@ -350,11 +367,12 @@ references/
 scripts/
   rules.py                   计算与查表（线宽/间距/过孔/阻抗/层数）
   plan.py                    布局坐标计划生成器（输出 playbook / shell）
-  check.py                   规范符合性检查器（布局 16 类 + 走线 4 类 + 整洁度 4 类）
+  check.py                   规范符合性检查器（布局 16 类 + 走线 4 类 + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
   schem.py                   原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
 assets/
   constraints.json           全部数值约束（机器可读，唯一真源）
   circuit-blocks.json        15 个功能块的可执行定义（网表生成器读这个）
+  chip-variants.json         5 颗芯片实例：真实脚号/料号/块级布局约束/出处
   plan.example.json          计划文件示例（60×45 四层板）
 examples/
   walkthrough.md             一块板从需求到投板的完整走查（含真实输出）
@@ -362,6 +380,9 @@ examples/
   spec.example.json          成品设计规格（人改过的版本，对照 spec 草稿看差在哪）
   netlist.example.json       76 器件 / 57 网络的成品网表（ERC: FAIL 0 / WARN 0）
   netlist.bad.json           反面网表（4 处 FAIL / 15 处 WARN，验证 ERC 真的会报）
+  netlist.decap.json         块级约束夹具（配合下面两个快照验证 BLK-DECAP）
+  snapshot.decap.ok.json     正例：去耦 1.8mm，应通过
+  snapshot.decap.bad.json    反例：去耦 8.1mm，必须报 FAIL
   snapshot.demo.json         有典型毛病的板子快照（喂 check.py 看报什么）
   snapshot.demo.fixed.json   回修后的同一块板（FAIL 0，剩 5 条 WARN）
   snapshot.aesthetics.json   整洁度反面样例（对齐/间距/朝向/角度各一条，另含不该报的交错双排）

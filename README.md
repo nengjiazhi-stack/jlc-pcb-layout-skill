@@ -17,7 +17,7 @@
 |---|---|---|
 | 输入 | 客户功能描述 | 网表 + 板框约束 |
 | 核心工具 | `schem.py`（spec/netlist/erc/bom/bind/playbook） | `plan.py` + `check.py` |
-| 规则库 | 15 个功能块 + 23 条 ERC | 6 套企业规范 + 33 条 DRC/DFM 规则 |
+| 规则库 | 15 个功能块 + 5 颗芯片实例 + 23 条 ERC | 6 套企业规范 + 38 条 DRC/DFM/块级规则 |
 | 数值 | 上拉/限流/负载电容/偏置/电感/TVS 档位 | 载流线宽/电气间距/过孔/叠层/阻抗 |
 | 落笔 | `eda.sch_*` API | `easyeda` CLI + `eda.pcb_*` API |
 
@@ -40,12 +40,14 @@
 需求层  references/schematic-workflow.md   澄清清单 / 五步流水线 / 三道门禁
 电路层  assets/circuit-blocks.json         15 个功能块的可执行定义
         references/circuit-blocks.md       每块"为什么这么接 + 常见错误"
+芯片层  assets/chip-variants.json           5 颗具体型号：真实脚号/料号/块级布局约束/出处
+        references/chip-variants.md        收录标准 + 7 种布局约束的可检查性
 规则层  references/schematic-rules.md      23 条 ERC 判据 + 数值表
         references/layout-rules.md 等      6 份企业规范转写（TY- / EM- / BELL- / ASUS-）
 计算层  scripts/schem.py                   11 个电路计算器
         scripts/rules.py                   载流/间距/过孔/层数/阻抗
 执行层  scripts/plan.py                    布局坐标计划生成器
-        scripts/check.py                   PCB 合规检查器（33 个规则号）
+        scripts/check.py                   PCB 合规检查器（38 个规则号，四态含 UNKNOWN）
         references/eda-execution.md        两套 API 的落笔顺序与坑
 ```
 
@@ -93,16 +95,18 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 ```
 器件 76（其中待绑定 16/16），网络 57，功能块 11
 
-检查结果：FAIL 0 / WARN 0 / INFO 12      ← 成品网表：结构干净，INFO 全是"待选型/GPIO 未分配"
-检查结果：FAIL 4 / WARN 15 / INFO 2      ← 反面样例：LED 无限流、线圈无续流、TVS 选小、CC 缺下拉
+检查结果：FAIL 0 / WARN 0 / INFO 12                    ← 成品网表：结构干净，INFO 全是"待选型/GPIO 未分配"
+检查结果：FAIL 4 / WARN 15 / INFO 2                    ← 反面样例：LED 无限流、线圈无续流、TVS 选小、CC 缺下拉
 
 最小线宽：1.5mm (59.1mil)   该档载流：3.2A
-检查结果：FAIL 1 / WARN 14 / INFO 3      ← demo 板：故意埋的 VDD×GND 短路
+检查结果：FAIL 1 / WARN 14 / UNKNOWN 2 / INFO 1        ← demo 板：故意埋的 VDD×GND 短路
 ```
 
 **后两条 ERC 是成对的自检设计**：好的必须干净、坏的必须报错。只测前者等于没测——检查器永远返回 0 违规也能"通过"。
 
-`snapshot.demo.json` 的 FAIL 1 同样是故意埋的短路，用来演示 `check.py` 能抓到；修好的版本是 `snapshot.demo.fixed.json`（`FAIL 0 / WARN 6`）。
+`snapshot.demo.json` 的 FAIL 1 同样是故意埋的短路，用来演示 `check.py` 能抓到；修好的版本是 `snapshot.demo.fixed.json`：`FAIL 0 / WARN 6 / UNKNOWN 2`。
+
+注意那个 **UNKNOWN 2**——修好之后反而不是"通过"。这两条是"缺 traces 数据"和"缺器件高度"，说明这两类检查**根本没跑**。以前它们混在 INFO 里，`FAIL 0` 看起来像合格；现在独立成 UNKNOWN，`--gate` 判 `INCOMPLETE`。**测不到不等于通过，这是从执行层项目学来的最重要一条。**
 
 ## 原理图部分
 
@@ -136,9 +140,30 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 
 都是 `schem.py` 里写死的返回码（`--strict` 时 WARN 也算不过），不靠自觉。
 
+## 芯片实例层
+
+拓扑块知道「要串限流电阻」，但不知道「SP3485 的 DI 是第 4 脚」。`assets/chip-variants.json` 补的是后一半：**5 颗具体型号的真实引脚表 + 料号 + 块级布局约束 + 出处**。
+
+```bash
+python scripts/schem.py chips                    # 看有哪几颗、各自什么状态
+python scripts/schem.py netlist spec.json --chip rs485=sp3485 --chip power_ldo=ams1117_33 -o nl.json
+```
+
+| id | 块 | 型号 | 料号 | 引脚 |
+|---|---|---|---|---|
+| `ams1117_33` | power_ldo | AMS1117-3.3 | C6186 | 3/3 完整 |
+| `sp3485` | rs485 | SP3485 | 需选型 | 8/8 完整 |
+| `sy8089` | power_buck | SY8089A | 需选型 | 5/5 完整 |
+| `usb_c_16p` | usb_typec_ufp | USB-C 16P | 需选型 | 部分（DP/DN 双焊盘） |
+| `esp32s3_wroom1` | mcu_min | ESP32-S3-WROOM-1 | 需选型 | **不可套用** |
+
+**只有一颗是「引脚完整 + 有料号」的可用组合。** 其余料号空着，是故意的：宁可让落笔脚本拒绝生成，也不让你拿着编出来的 C 号去下单。
+
+最后那颗 `esp32s3_wroom1` 是个刻意留的反面教材：它和 `mcu_min` 块的引脚名根本对不上（ESP32-S3 内建晶振、调试是 JTAG、复位脚叫 EN），硬套会生成一张看起来正常、实际全错的网表。所以它带 `blocked_by`，套用时直接报错并告诉你该新建哪种块。**能明确说「不行」的知识，比含糊能用的值钱。**
+
 ## PCB 部分
 
-### 33 个规则号，四组
+### 38 个规则号，五组
 
 | 组 | 规则 | 管什么 |
 |---|---|---|
@@ -146,6 +171,7 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 | 摆放 `PL-*` | 极性朝向、IC 1 脚朝向、器件高度、高矮混放、电感正交（车规）、重心偏移、插拔净空、MARK 数量与跨距 | 摆得对不对 |
 | 布线 `TY-6.5.6-*` | 悬空线头、直角/锐角、3W、异网短路、线宽一致性、过孔孔厚比 | 走线合不合规 |
 | 图面整洁 `AEST-*` | 共线、阵列间距、0/90/180/270、0/45/90 角度栅格 | 齐不齐 |
+| 块级约束 `BLK-*` | 去耦贴 IC ≤2mm、保护器件贴连接器 ≤5mm（几何硬算）；其余约束汇总报 UNKNOWN | 芯片级要求落实了没 |
 
 摆件顺序是硬约束（P0 机械锁定 → P1 功率热源 → P2 核心 IC → P3 就近器件 → P4 敏感小信号 → P5 其余阻容 → P6 测试点/MARK/丝印），前一档未锁定不得进入下一档。
 
@@ -168,7 +194,8 @@ jlc-pcb-layout-skill/
 
 ## 边界（先说清楚）
 
-- **不编料号。** 15 个块只给"必接什么、参数范围"，具体型号必须人选型后填 `lcsc`。这是刻意的——料号编错会造成批量买错料，比画错图贵得多。
+- **不编料号。** 拓扑块只给"必接什么、参数范围"；芯片实例只收核对过 datasheet 的脚号，料号没有就留空。这是刻意的——料号编错会造成批量买错料，比画错图贵得多。
+- **`UNKNOWN` 不等于通过。** 缺 traces、缺高度、缺丝印、块级约束无几何判据，都会报 UNKNOWN。`--gate` 判 `INCOMPLETE`，退出码 2。把它当 `FAIL 0` 读，就等于把"没查"当成"没问题"。
 - **ERC 查不出全部。** 它只查结构性错误（悬空、缺失、极性、数值越界）。查不出：选型是否合适、时序是否满足、环路是否稳定、EMC 是否过关。这些必须人看。
 - **落笔只保证逻辑连通。** `playbook` 生成的脚本用"每个引脚拉一段带网络名的短线"建立连接，同名即连通。走线走向要人工整理——逻辑连通可验证，好看不可验证。
 - **不装 CLI 也能用前两层。** 只能算数值、出网表、跑 ERC、出 BOM，最后落笔得自己在画布上点。

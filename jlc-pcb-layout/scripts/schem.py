@@ -59,6 +59,10 @@ def load_constraints() -> dict:
     return load_asset("constraints.json")
 
 
+def load_chips() -> dict:
+    return load_asset("chip-variants.json").get("variants", {})
+
+
 def load_blocks() -> dict:
     return load_asset("circuit-blocks.json")["blocks"]
 
@@ -535,11 +539,47 @@ def _tvs_vrwm(vop: float, mult: float = 1.1) -> float:
     return TVS_STEPS[-1]
 
 
-def build_netlist(spec: dict) -> dict:
+def _apply_variant(part: dict, vid: str, v: dict) -> list[str]:
+    """把芯片实例并进一个器件：料号、引脚号、块级布局约束。
+
+    只填确定对得上的脚；对不上的一律不猜，交给 pin_no_partial 让引擎报 UNKNOWN。
+    返回该实例的块级布局约束列表。
+    """
+    if v.get("blocked_by"):
+        raise SystemExit(
+            f"芯片 {vid} 不能套进块 {part['block']}：{v['blocked_by']}")
+    logical = list(part["pins"])
+    known = {k: str(vv) for k, vv in (v.get("pins") or {}).items() if k in logical}
+    part["variant"] = vid
+    part["variant_name"] = v.get("name") or vid
+    if v.get("mpn"):
+        part["mpn"] = v["mpn"]
+    if v.get("package"):
+        part["package"] = v["package"]
+    if v.get("lcsc"):
+        part["lcsc"] = v["lcsc"]
+        part["lcsc_status"] = v.get("lcsc_status", "sourced")
+    else:
+        part["lcsc_status"] = v.get("lcsc_status", "need_select")
+    if known:
+        part["pin_no"] = known
+    missing = [k for k in logical if k not in known]
+    if missing:
+        part["pin_no_partial"] = missing
+    if v.get("caveats"):
+        part["caveats"] = list(v["caveats"])
+    src = {"origin": v.get("origin", ""), "source": v.get("source", ""), "verified": v.get("verified", "")}
+    part["provenance"] = {k: x for k, x in src.items() if x}
+    return list(v.get("pcb_layout") or [])
+
+
+def build_netlist(spec: dict, chip_map: dict | None = None) -> dict:
     blocks = load_blocks()
     cons = load_constraints()["schematic"]
+    variants = load_chips() if chip_map else {}
     alloc = Allocator()
     parts: list[dict] = []
+    layout_cons: list[dict] = []
     assumptions = list(spec.get("assumptions", []))
     rail_v = {r["name"]: r.get("v") for r in spec.get("rails", [])}
     rail_i = {r["name"]: r.get("i_a") for r in spec.get("rails", [])}
@@ -552,6 +592,12 @@ def build_netlist(spec: dict) -> dict:
         blk = blocks[btype]
         count = int(bspec.get("count", 1))
         user_params = bspec.get("params", {})
+        vid = (chip_map or {}).get(btype)
+        if vid and vid not in variants:
+            raise SystemExit(f"未知芯片实例 {vid}（可用：{', '.join(sorted(variants))}）")
+        if vid and variants[vid].get("for_block") != btype:
+            raise SystemExit(
+                f"芯片 {vid} 是为块 {variants[vid].get('for_block')} 准备的，不能套进 {btype}")
 
         for idx in range(count):
             tag = blk["tag"] if count == 1 else f"{blk['tag']}{idx + 1}"
@@ -598,6 +644,13 @@ def build_netlist(spec: dict) -> dict:
                     part["note"] = sub_str(pt["note"], ctx)
                 if pt.get("optional"):
                     part["optional"] = True
+                if vid and pt["kind"] == variants[vid].get("fills_kind"):
+                    for c in _apply_variant(part, vid, variants[vid]):
+                        layout_cons.append({
+                            "block": btype, "instance": tag, "ref": ref,
+                            "variant": vid, **{k: c.get(k) for k in
+                                               ("rule", "target", "constraint", "value", "severity")},
+                        })
                 parts.append(part)
 
     # 汇总网络
@@ -632,14 +685,36 @@ def build_netlist(spec: dict) -> dict:
             "blocks": len(spec.get("blocks", [])),
             "binding_required": sum(1 for p in parts if p["binding"] == "required"),
             "binding_pending": sum(1 for p in parts if p["binding"] == "required" and not p.get("lcsc")),
+            "pins_unmapped": sum(len(p.get("pin_no_partial") or []) for p in parts),
+            "variants_applied": sum(1 for p in parts if p.get("variant")),
         },
+        "layout_constraints": layout_cons,
     }
     return nl
 
 
+def _parse_chip_map(items) -> dict:
+    """--chip rs485=sp3485 或 --chip sp3485（后者按 variant 的 for_block 自动定位）。"""
+    variants = load_chips()
+    out = {}
+    for raw in items or []:
+        if "=" in raw:
+            block, vid = raw.split("=", 1)
+            out[block.strip()] = vid.strip()
+            continue
+        vid = raw.strip()
+        if vid not in variants:
+            raise SystemExit(f"未知芯片实例 {vid}（可用：{', '.join(sorted(variants))}）")
+        blk = variants[vid].get("for_block")
+        if not blk:
+            raise SystemExit(f"芯片 {vid} 没有登记 for_block，请写成 --chip 块名={vid}")
+        out[blk] = vid
+    return out
+
+
 def cmd_netlist(args) -> int:
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    nl = build_netlist(spec)
+    nl = build_netlist(spec, _parse_chip_map(getattr(args, "chip", None)))
     if args.output:
         dump(nl, args.output)
         if args.report:
@@ -1097,12 +1172,14 @@ def cmd_bind(args) -> int:
     if isinstance(rb, list):
         rb = {item["ref"]: item for item in rb}
 
-    bound, unmatched, not_given = 0, [], []
+    bound, unmatched, not_given, conflicts = 0, [], [], []
     for p in nl["parts"]:
         info = rb.get(p["ref"])
         if not info:
             not_given.append(p["ref"])
             continue
+        # 芯片实例已经声明过引脚表时，回读结果必须与它一致 —— 不一致说明库里选错了器件
+        declared = dict(p.get("pin_no") or {}) if p.get("variant") else {}
         pins = info.get("pins") or []
         name_map = {}
         for pin in pins:
@@ -1119,20 +1196,34 @@ def cmd_bind(args) -> int:
         if len(pin_no) == len(p["pins"]):
             p["pin_no"] = pin_no
             bound += 1
+            if declared:
+                diff = {k: {"variant": declared[k], "readback": pin_no[k]}
+                        for k in declared
+                        if k in pin_no and declared[k] != pin_no[k]}
+                if diff:
+                    conflicts.append({"ref": p["ref"], "variant": p.get("variant"), "diff": diff})
         else:
             missing = [pid for pid in p["pins"] if pid not in pin_no]
             unmatched.append({"ref": p["ref"], "missing_pin_ids": missing,
                               "available_pin_names": sorted(name_map)[:20]})
 
-    nl["bind_status"] = {"bound": bound, "mismatch": unmatched, "not_in_readback": not_given}
+    nl["bind_status"] = {"bound": bound, "mismatch": unmatched,
+                         "not_in_readback": not_given, "pin_conflicts": conflicts}
     dump(nl, args.output)
     if unmatched:
         print(f"\n{len(unmatched)} 个器件引脚对不上，需人工核对（功能名 ↔ 实际引脚名）：")
         for u in unmatched[:5]:
             print(f"  {u['ref']}: 缺 {u['missing_pin_ids']}；库里可用的脚名 {u['available_pin_names']}")
+    if conflicts:
+        print(f"\n{len(conflicts)} 个器件的引脚号与芯片实例表不一致 —— 多半是库里选了别的型号或别的封装：")
+        for c in conflicts[:5]:
+            print(f"  {c['ref']}（实例 {c['variant']}）")
+            for pin, v in list(c["diff"].items())[:6]:
+                print(f"     {pin}: 实例表说 {v['variant']} 脚，回读是 {v['readback']} 脚")
+        print("  先确认库器件是否就是这台型号；确属换料就更新 chip-variants.json，别让两边长期不一致。")
     print(f"已绑定 {bound} 个器件；回读里没有的 {len(not_given)} 个保持未绑定"
           + ("（可分批 bind）" if not_given else ""))
-    return 0 if not unmatched else 2
+    return 0 if (not unmatched and not conflicts) else 2
 
 
 # ---------------------------------------------------------------- 落笔 playbook
@@ -1328,6 +1419,43 @@ def cmd_playbook(args) -> int:
 
 # ---------------------------------------------------------------- blocks
 
+def cmd_chips(args) -> int:
+    variants = load_chips()
+    rows = []
+    for vid, v in sorted(variants.items()):
+        if getattr(args, "for_block", None) and v.get("for_block") != args.for_block:
+            continue
+        rows.append({
+            "id": vid,
+            "for_block": v.get("for_block"),
+            "name": v.get("name"),
+            "package": v.get("package"),
+            "lcsc": v.get("lcsc"),
+            "lcsc_status": v.get("lcsc_status"),
+            "pins": len(v.get("pins") or {}),
+            "pins_partial": bool(v.get("pins_partial")),
+            "layout_rules": len(v.get("pcb_layout") or []),
+            "blocked_by": v.get("blocked_by"),
+            "origin": v.get("origin"),
+        })
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+    if not rows:
+        print(f"块 {args.for_block} 暂无芯片实例。用 `chips` 看全部。")
+        return 0
+    print(f"{len(rows)} 个芯片实例\n")
+    for r in rows:
+        flag = "✗ 不可套用" if r["blocked_by"] else ("部分引脚" if r["pins_partial"] else "引脚完整")
+        lc = r["lcsc"] or "—（需选型）"
+        print(f"{r['id']:<18} → {r['for_block']:<16} {r['name']}")
+        print(f"   {r['package'] or '?':<18} LCSC {lc:<14} {r['pins']} 脚 {flag} · {r['layout_rules']} 条布局约束")
+        if r["blocked_by"]:
+            print(f"   ! {r['blocked_by'][:110]}…")
+    print("\n引脚完整 + 有 LCSC 才是可直接落笔的组合；标「需选型」的必须先填料号。")
+    return 0
+
+
 def cmd_blocks(args) -> int:
     blocks = load_blocks()
     if args.json:
@@ -1390,7 +1518,14 @@ def main(argv=None) -> int:
     p.add_argument("--fsw-khz", dest="fsw_khz", type=float, default=500)
     p.set_defaults(func=cmd_calc)
 
+    p = sub.add_parser("chips", help="列出芯片实例（型号/料号/引脚/布局约束）")
+    p.add_argument("--for-block", help="只看某个拓扑块可用的芯片")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_chips)
+
     p = sub.add_parser("netlist", help="设计规格 → 网表")
+    p.add_argument("--chip", action="append", metavar="块=型号",
+                   help="套用芯片实例，如 --chip rs485=sp3485；可重复")
     p.add_argument("spec")
     p.add_argument("-o", "--output")
     p.add_argument("--report", action="store_true")
