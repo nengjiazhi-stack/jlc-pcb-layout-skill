@@ -70,9 +70,11 @@ python scripts/plan.py assets/plan.example.json -o p.json --report
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json
+python scripts/schem.py audit examples/netlist.example.json
+python scripts/schem.py audit examples/netlist.xpin.json
 ```
 
-期望输出（九条，顺序与上面一一对应）：
+期望输出（十一条，顺序与上面一一对应）：
 
 ```
 器件 76（其中待绑定 16/16），网络 57，功能块 11
@@ -189,7 +191,7 @@ jlc-pcb-layout/
     eda-execution.md       两条执行通道 + 落笔顺序 + 已知坑
     layout-plan.md         计划文件 JSON 规格
   scripts/
-    schem.py               原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
+    schem.py               原理图生成与校验（spec/netlist/erc/audit/bom/bind/playbook + 11 个计算器）
     rules.py               六个计算子命令
     plan.py                布局坐标计划生成器
     check.py               规范符合性检查器（四态含 UNKNOWN；--gate 单一判定；--netlist 并入 ERC 与块级约束）
@@ -201,6 +203,8 @@ jlc-pcb-layout/
     netlist.example.json   成品网表（76 器件 / 57 网络，ERC FAIL 0）
     netlist.bad.json       反面网表（4 FAIL / 15 WARN）
     netlist.decap.json     块级约束夹具（验证 BLK-DECAP）
+    netlist.xpin.json      审计反面夹具（BOOT 无自举电容 / VIN 无 100nF / EN 悬空 / LED 无限流）
+    heights.example.json   两趟布局的实测高度输入示例（11 实测 + 10 故意留估算）
     snapshot.decap.ok.json    正例：去耦 1.8mm 应通过
     snapshot.decap.bad.json   反例：去耦 8.1mm 必须 FAIL
     snapshot.demo.json     故意埋缺陷的快照（FAIL 1 / WARN 14）

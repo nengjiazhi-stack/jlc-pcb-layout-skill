@@ -41,7 +41,7 @@ description: 在嘉立创EDA专业版里按客户需求做原理图、再把 PCB
 
 | 用户说 | 模式 | 走哪条路 |
 |---|---|---|
-| "客户要个 XX 板 / 帮我做原理图" | **原理图新建** | 第一部分 A→E |
+| "客户要个 XX 板 / 帮我做原理图" | **原理图新建** | 第一部分 A→F |
 | "这个电路对不对 / 帮我看看原理图" | **原理图审查** | 只读：`schem.py erc` + `references/schematic-rules.md`，不改图 |
 | "LED 串多大电阻 / I2C 上拉多少" 类单点问题 | **速查** | `schem.py calc` 一条命令出答案 |
 | "帮我画 / 布一块 XX 板" | **PCB 新建** | 第二部分 A→E |
@@ -99,7 +99,38 @@ python scripts/schem.py erc netlist.json [--strict] [--json]
 
 `examples/netlist.bad.json` 是埋了 4 处 FAIL 的反面样例，用来验证检查器真的会报。
 
-## E. 选型 → 落笔
+## E. 落笔前审计（外围完整性 / 货源）
+
+ERC 查「连了什么、电气对不对」，audit 查「该有的东西有没有」。两者都过才许落笔。
+
+```bash
+python scripts/schem.py audit netlist.json [--gate] [--emit-nc] [--json]
+```
+
+判据在 `constraints.json → schematic.audit`，共 10 条：
+
+| 规则 | 严重度 | 查什么 |
+|---|---|---|
+| `SCH-BOM-XPIN` | FAIL | **跨引脚电容**：`SETC`/`VREG`/`CP`/`BOOT`/`SS`/`COMP`/`TS` 这类脚的电容漏了（不在 VCC 脚上，最易漏） |
+| `SCH-BOM-DECAP` | FAIL | 每个电源脚所在网络有没有一颗 10nF~1µF、且另一端真的接地的电容 |
+| `SCH-BOM-PULL` | WARN | `EN`/`NRST`/`NCS`/`BOOT0` 等控制脚是否**真的**被电阻拉到电源或地 |
+| `SCH-BOM-LED` | WARN | LED 是否**真的**与电阻串联（共用电源轨上的分压电阻不算） |
+| `SCH-BOM-CONN` | INFO | 外露接口（USB/485/CAN/RJ45）有没有 ESD/TVS |
+| `SCH-BOM-TP` | INFO | 全板有没有测试点 |
+| `SCH-NC-UNCONN` | INFO | 哪些引脚没接网络，或指向不存在的网络 |
+| `SCH-SUPPLY-STOCK` | 动态 | 库存：`0`→FAIL，`<50`→WARN，**未核验→UNKNOWN** |
+| `SCH-SUPPLY-LIB` | INFO | 是否基础库 / 优选库 |
+| `SCH-AUDIT-BLIND` | UNKNOWN | 引脚名只有脚号，去耦与专用脚**根本没法定位** |
+
+`--gate` 的退出码：`1` = BLOCKED（有 FAIL）、`2` = INCOMPLETE（有 UNKNOWN）、`0` = PASS。
+
+**为什么 UNKNOWN 要单独拦**：库存没查、引脚名不可识别，这两类都是"检查根本没跑"。`FAIL 0` 看着像合格，`INCOMPLETE` 就是不让它蒙过去。
+
+`--emit-nc` 额外输出未连接脚的标记骨架。注意 `setState_NoConnected` 的调用方式本仓库**未验证过**，骨架里带存在性探测——探测不到就只留清单，不许硬调。
+
+反例夹具：`examples/netlist.xpin.json`（BOOT 无自举电容、VIN 只有 10µF、EN 悬空、LED 无限流），应报 `FAIL 2 / WARN 2 / UNKNOWN 1 / INFO 2`。
+
+## F. 选型 → 落笔
 
 选型是**人的工作**：`binding: required` 的器件必须查立创商城的参数、封装、库存、生命周期，把料号填进 netlist 的 `lcsc`。
 
@@ -142,6 +173,25 @@ python scripts/plan.py assets/plan.example.json -o my_plan.json --emit-steps ste
 计划生成后**先读一遍**（`--report` 只看块占用），重点看：电源块是否靠输入边、高速块是否靠接口、去耦电容是否贴着对应的 IC 引脚。不合理就改计划文件的 `blocks[].edge` / `priority` 重跑，别在画布上手工纠偏。
 
 **摆件顺序对计划文件的要求**：`blocks[].priority` 必须映射成 P0→P6 档位（P0 机械锁定件、P1 功率热源、P2 核心 IC、P3 就近器件、P4 敏感小信号、P5 其余阻容、P6 测试点/MARK/丝印）。`plan.py` 出坐标后，落笔时**按档位分批执行，每批做完回读一次**，不要一把梭。P3 档（去耦电容 / 串联匹配电阻 / 晶振 + 负载电容）在计划里要显式列出，不允许被 P5 的"阵列对齐"逻辑带跑。
+
+### 两趟高度：先估算，回读真实高度后重排
+
+`plan.py` 排坐标靠 `w_mm` / `h_mm`，这两个值通常填的是封装名义尺寸。但 EDA 符号的实际高度经常不一样——带屏蔽罩的模块、带散热片的 LDO、带排针的插座，实际比名义值高一截。只排一趟，密集区叠件要等 `check.py` 事后才报，那时器件已经落位了。
+
+```bash
+# 第一趟：用估算尺寸排，同时列出需要回读的位号
+python scripts/plan.py my_spec.json -o plan_pass1.json --emit-heights heights.todo.json
+
+# 回读每个符号的 bbox 高度，换算成 mm 填进 heights.json：
+#   {"U1": {"h_mm": 1.6, "source": "easyeda:bbox"}, "C1": 0.9}
+
+# 第二趟：用实测高度重排
+python scripts/plan.py my_spec.json --heights heights.json -o plan.json --report
+```
+
+报告末行 `高度：实测 N / 估算 M` 要读到**估算 0** 才算收工。仍标 `estimated` 的器件，叠件风险**没有排除**——那不是"大概没事"，是"没查"。计划里每颗器件都带 `height_source`（`measured` / `estimated` / `given`），可以逐条核对。
+
+示例：`examples/heights.example.json` 只回读了 11 颗、故意留 10 颗估算，用来看这个计数怎么变。
 
 ## C. 落笔
 
@@ -278,8 +328,10 @@ python scripts/rules.py impedance --type microstrip|stripline|diff-microstrip|di
                                   --w 0.25 --h 0.20 [--s 0.15] [--t 0.035] [--er 4.3] [--target 90]
 # 任何子命令都可加 --json
 
-# 计划
+# 计划（两趟：先 --emit-heights 列回读清单，回读后 --heights 重排）
 python scripts/plan.py my_spec.json -o plan.json [--report] [--emit-steps steps.json] [--emit-sh] [--project <名>]
+python scripts/plan.py my_spec.json --emit-heights heights.todo.json
+python scripts/plan.py my_spec.json --heights heights.json -o plan.json --report
 
 # 检查
 python scripts/check.py snapshot.json [--min-severity FAIL|WARN|UNKNOWN|INFO] [--json] [--strict]
@@ -294,6 +346,7 @@ python scripts/schem.py netlist spec.json --chip rs485=sp3485 -o nl.json   # 套
 python scripts/schem.py spec --req 需求.txt -o spec.json    # 需求 → 设计规格（草稿，需人改）
 python scripts/schem.py netlist spec.json -o netlist.json --report
 python scripts/schem.py erc netlist.json [--strict] [--json] [--min-severity WARN]
+python scripts/schem.py audit netlist.json [--gate] [--emit-nc] [--json]    # 外围完整性/货源
 python scripts/schem.py bom netlist.json -o bom.csv
 python scripts/schem.py bind netlist.json readback.json -o netlist.bound.json
 python scripts/schem.py playbook netlist.json --js apply.js [--allow-missing]
@@ -331,9 +384,12 @@ python scripts/schem.py netlist examples/spec.example.json --chip rs485=sp3485 -
 python scripts/schem.py erc examples/netlist.example.json                            # 应报 FAIL 0 / WARN 0
 python scripts/schem.py erc examples/netlist.bad.json                                # 反面样例，应报 FAIL 4
 python scripts/schem.py chips                                                        # 应见 5 颗，其中 1 颗不可套用
+python scripts/schem.py audit examples/netlist.example.json                          # 应 FAIL 0，但有 UNKNOWN 1（U2 引脚名只有脚号）
+python scripts/schem.py audit examples/netlist.xpin.json                             # 反面夹具，应 FAIL 2 / WARN 2 / UNKNOWN 1
+python scripts/plan.py assets/plan.example.json --heights examples/heights.example.json -o p2.json --report   # 应显示 实测 11 / 估算 10
 ```
 
-十条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
+十三条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
 
 
 ## 红线
@@ -355,7 +411,7 @@ python scripts/schem.py chips                                                   
 ```
 SKILL.md
 references/
-  schematic-workflow.md      需求 → 原理图 工作流（澄清清单/五步/三道门禁/交付物/常见翻车）
+  schematic-workflow.md      需求 → 原理图 工作流（澄清清单/六步/四道门禁/交付物/常见翻车）
   circuit-blocks.md          15 个功能块参考电路（组成/参数怎么算/常见错误/对应规则号）
   chip-variants.md           芯片实例层：收录标准、5 颗的真实状态、怎么加新芯片、7 种布局约束的可检查性
   integration.md             与执行层（easyeda-agent-open）对接：已验证事实、三个对接点、不吸收的四项
@@ -369,9 +425,9 @@ references/
   layout-plan.md             布局计划 JSON 规格
 scripts/
   rules.py                   计算与查表（线宽/间距/过孔/阻抗/层数）
-  plan.py                    布局坐标计划生成器（输出 playbook / shell）
+  plan.py                    布局坐标计划生成器（两趟高度：--emit-heights / --heights；输出 playbook / shell）
   check.py                   规范符合性检查器（布局 16 类 + 走线 4 类 + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
-  schem.py                   原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
+  schem.py                   原理图生成与校验（spec/netlist/erc/audit/bom/bind/playbook + 11 个计算器）
 assets/
   constraints.json           全部数值约束（机器可读，唯一真源）
   circuit-blocks.json        15 个功能块的可执行定义（网表生成器读这个）
@@ -384,6 +440,8 @@ examples/
   netlist.example.json       76 器件 / 57 网络的成品网表（ERC: FAIL 0 / WARN 0）
   netlist.bad.json           反面网表（4 处 FAIL / 15 处 WARN，验证 ERC 真的会报）
   netlist.decap.json         块级约束夹具（配合下面两个快照验证 BLK-DECAP）
+  netlist.xpin.json          审计反面夹具（BOOT 无自举电容 / VIN 无 100nF / EN 悬空 / LED 无限流）
+  heights.example.json       两趟布局的实测高度输入示例（11 颗实测 + 10 颗故意留估算）
   snapshot.decap.ok.json     正例：去耦 1.8mm，应通过
   snapshot.decap.bad.json    反例：去耦 8.1mm，必须报 FAIL
   snapshot.demo.json         有典型毛病的板子快照（喂 check.py 看报什么）

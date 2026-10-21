@@ -1,13 +1,14 @@
 {
   "_meta": {
     "purpose": "芯片实例层：把拓扑块的主器件落到具体型号，带真实引脚号、LCSC 与块级布局约束。拓扑块回答“这个功能要接什么”，本文件回答“这颗芯片的第几脚”。",
-    "schema": "variants.<id> = {for_block, fills_kind, name, mpn, package, lcsc, lcsc_status, pins, pins_partial, caveats, pcb_layout, source, origin, verified, blocked_by}",
+    "schema": "variants.<id> = {for_block, fills_kind, name, mpn, package, lcsc, lcsc_status, pins, pins_partial, caveats, pcb_layout, supply, source, origin, verified, blocked_by}",
     "attribution": "部分字段转录自 easyeda-agent-open（MIT License，Copyright (c) 2026 zhoushoujianwork and contributors）的 internal/blocks/data/*.json 与 .agents/skills/easyeda-agent/references/pcb-design-rules.md。原文是供人读的散文描述，本文件逐条核对后转成结构化字段，每条保留 origin 可回查。",
     "rules": [
       "只收能核对到 datasheet 引脚号的型号；核对不了的 lcsc 留 null 并标 need_select，不许填猜的料号。",
       "pins 只写确定对得上的脚；对不上的不猜，靠 pins_partial + 引擎报 UNKNOWN。",
       "variant 与块的引脚名不符时不许硬套（见 blocked_by），宁可报错也不生成错网表。",
-      "pcb_layout 里的 must 项由 check.py 的 BLK-* 规则消费；判定不了的要报 UNKNOWN，不许沉默跳过。"
+      "pcb_layout 里的 must 项由 check.py 的 BLK-* 规则消费；判定不了的要报 UNKNOWN，不许沉默跳过。",
+      "supply 只写你亲自查到的数值；没查过就保持 lcsc_stock=null / library=unknown，schem.py audit 会把它报成 UNKNOWN（缺数据不等于合格），不许拿默认值当 P0。"
     ]
   },
   "variants": {
@@ -74,7 +75,14 @@
       ],
       "source": "SP3485 datasheet Rev 2.0.2（MaxLinear）第 1 页引脚图、第 2 页真值表；MODBUS over Serial Line V1.02 §3.4.5 终端 / §3.4.6 极化 / §3.6 电缆与 Common",
       "origin": "easyeda-agent-open::block.sp3485_rs485_halfduplex",
-      "verified": "引脚号已按 datasheet 核对（8/8）。LCSC 未提供，须在立创商城选型后回填 lcsc 才允许生成落笔脚本。"
+      "verified": "引脚号已按 datasheet 核对（8/8）。LCSC 未提供，须在立创商城选型后回填 lcsc 才允许生成落笔脚本。",
+      "supply": {
+        "lcsc_stock": null,
+        "stock_checked": null,
+        "library": "unknown",
+        "price_cny": null,
+        "note": "未核验：本仓库不联网查库存。下单前用立创商城逐项核对后填 lcsc_stock / library / stock_checked。"
+      }
     },
     "ams1117_33": {
       "for_block": "power_ldo",
@@ -113,7 +121,14 @@
       ],
       "source": "AMS1117 datasheet（Advanced Monolithic Systems）第 1 页引脚定义、第 3 页压差、第 4 页稳定性与典型电路、第 5 页固定版与散热说明；LCSC C6186",
       "origin": "easyeda-agent-open::block.ams1117_ldo_3v3",
-      "verified": "引脚号 1=GND / 2=VOUT / 3=VIN 已与 datasheet 核对，且与本块 IC 的既有命名一致（identity 映射）。LCSC C6186 取自其 source 字段原文。"
+      "verified": "引脚号 1=GND / 2=VOUT / 3=VIN 已与 datasheet 核对，且与本块 IC 的既有命名一致（identity 映射）。LCSC C6186 取自其 source 字段原文。",
+      "supply": {
+        "lcsc_stock": null,
+        "stock_checked": null,
+        "library": "unknown",
+        "price_cny": null,
+        "note": "未核验：本仓库不联网查库存。下单前用立创商城逐项核对后填 lcsc_stock / library / stock_checked。"
+      }
     },
     "sy8089": {
       "for_block": "power_buck",
@@ -161,7 +176,14 @@
       ],
       "source": "SY8089A datasheet（Silergy）2A 同步 buck 典型应用：Vref 0.6V、FB 分压、2.2µH、输入输出陶瓷电容",
       "origin": "easyeda-agent-open::block.sy8089_buck_3v3",
-      "verified": "引脚号按其块内 note 的 sch read 实测记录（1=EN 2=GND 3=LX 4=IN 5=FB）转录；未独立核对 datasheet 封装图，首次用前请对一眼。"
+      "verified": "引脚号按其块内 note 的 sch read 实测记录（1=EN 2=GND 3=LX 4=IN 5=FB）转录；未独立核对 datasheet 封装图，首次用前请对一眼。",
+      "supply": {
+        "lcsc_stock": null,
+        "stock_checked": null,
+        "library": "unknown",
+        "price_cny": null,
+        "note": "未核验：本仓库不联网查库存。下单前用立创商城逐项核对后填 lcsc_stock / library / stock_checked。"
+      }
     },
     "usb_c_16p": {
       "for_block": "usb_typec_ufp",
@@ -210,7 +232,14 @@
       ],
       "source": "USB Type-C Cable and Connector Specification R2.0（16P 母座焊盘定义）；USB-C Rd 5.1k 见 USB Type-C R2.0 §4.5.1.2.3",
       "origin": "easyeda-agent-open::block.usbc_ufp_power_or",
-      "verified": "焊盘名转自其块内 note 的 sch read 实测记录；DP/DN 是双焊盘，标 pins_partial，落笔前必须按库实际焊盘补齐（引擎会报 UNKNOWN）。"
+      "verified": "焊盘名转自其块内 note 的 sch read 实测记录；DP/DN 是双焊盘，标 pins_partial，落笔前必须按库实际焊盘补齐（引擎会报 UNKNOWN）。",
+      "supply": {
+        "lcsc_stock": null,
+        "stock_checked": null,
+        "library": "unknown",
+        "price_cny": null,
+        "note": "未核验：本仓库不联网查库存。下单前用立创商城逐项核对后填 lcsc_stock / library / stock_checked。"
+      }
     },
     "esp32s3_wroom1": {
       "for_block": "mcu_min",
@@ -258,7 +287,14 @@
       ],
       "source": "ESP32-S3-WROOM-1 datasheet（Espressif）模组引脚与推荐外围电路",
       "origin": "easyeda-agent-open::block.esp32s3_wroom1_module",
-      "verified": "引脚号未逐条核对（模组有 40+ 脚，本表只覆盖 4 个），且与 mcu_min 块结构不兼容，故标记 blocked_by，引擎会拒绝套用。"
+      "verified": "引脚号未逐条核对（模组有 40+ 脚，本表只覆盖 4 个），且与 mcu_min 块结构不兼容，故标记 blocked_by，引擎会拒绝套用。",
+      "supply": {
+        "lcsc_stock": null,
+        "stock_checked": null,
+        "library": "unknown",
+        "price_cny": null,
+        "note": "未核验：本仓库不联网查库存。下单前用立创商城逐项核对后填 lcsc_stock / library / stock_checked。"
+      }
     }
   }
 }

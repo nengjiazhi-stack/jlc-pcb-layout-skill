@@ -1128,6 +1128,311 @@ def cmd_erc(args) -> int:
     return 1 if counts["FAIL"] else 0
 
 
+# ------------------------------------------------ 落笔前审计（外围完整性 / 供货 / 未连接脚）
+#
+# 与 erc 的分工：erc 查「网表自不自洽、电气参数对不对」，audit 查「该有的东西有没有」。
+# erc 只看连了什么，audit 还看漏了什么——尤其是跨引脚电容这类不在 VCC 脚上的外围。
+# 两者都跑完才算过了落笔门禁。
+
+IC_KINDS = ("IC", "MCU")
+CAP_KINDS = ("C",)
+
+
+def _members(nets: dict, net: str) -> list[str]:
+    return list((nets.get(net) or {}).get("pins") or [])
+
+
+def _net_has_kind(nets: dict, by_ref: dict, net: str, kinds: tuple,
+                  cap_range: tuple[float, float] | None = None) -> bool:
+    """网络 N 上是否挂着 kinds 类器件；给了 cap_range 就要求容值落在区间内。"""
+    for member in _members(nets, net):
+        p = by_ref.get(member.split(".")[0])
+        if not p or p.get("kind") not in kinds:
+            continue
+        if cap_range:
+            f = parse_c(p.get("value"))
+            if f is None:
+                continue          # 值解析不出来不算命中；这种情况另有 UNKNOWN 兜底
+            if not (cap_range[0] <= f <= cap_range[1]):
+                continue
+        return True
+    return False
+
+
+def _pin_net(part: dict, pin: str) -> str | None:
+    """取某功能名/脚号对应的网络名；没接就是 None。"""
+    net = (part.get("pins") or {}).get(pin)
+    return net if net else None
+
+
+def _candidates(nets: dict, by_ref: dict, net: str, kinds: tuple, ref_exclude: str | None = None):
+    """该网络上的 kinds 类器件（排除 ref_exclude 自己）。"""
+    for member in _members(nets, net):
+        ref = member.split(".")[0]
+        q = by_ref.get(ref)
+        if q and q.get("kind") in kinds and ref != ref_exclude:
+            yield q
+
+
+def _has_decap(nets: dict, by_ref: dict, net: str, lo: float, hi: float) -> bool:
+    """net 上是否有一颗 lo~hi 容值的电容，且它的另一端真的接地。
+    只看「网路上有电容」会把跨接在两根电源线之间的电容也算进去。"""
+    for q in _candidates(nets, by_ref, net, CAP_KINDS):
+        f = parse_c(q.get("value"))
+        if f is None or not (lo <= f <= hi):
+            continue
+        if any((nets.get(n) or {}).get("class") == "ground"
+               for n in (q.get("pins") or {}).values() if n and n != net):
+            return True
+    return False
+
+
+def _has_cap_any(nets: dict, by_ref: dict, net: str) -> bool:
+    return any(True for _ in _candidates(nets, by_ref, net, CAP_KINDS))
+
+
+def _has_pull_to_rail(nets: dict, by_ref: dict, net: str) -> bool:
+    """net 上是否有电阻，且电阻另一端接在电源或地上（这才是上/下拉）。
+    只要求「有电阻」会把串联在信号路里的电阻误当成上拉。"""
+    for q in _candidates(nets, by_ref, net, ("R",)):
+        if any((nets.get(n) or {}).get("class") in ("power", "ground")
+               for n in (q.get("pins") or {}).values() if n and n != net):
+            return True
+    return False
+
+
+def _has_series_r(nets: dict, by_ref: dict, ref: str, net: str) -> bool:
+    """ref 的某个脚是否通过一个电阻串出去：该网络恰好 2 个成员，另一个是电阻。
+    共地网络上的分压电阻不算串联限流。"""
+    members = _members(nets, net)
+    if len(members) != 2:
+        return False
+    mine = [m for m in members if m.startswith(ref + ".")]
+    if len(mine) != 1:
+        return False
+    other = members[0] if members[1] == mine[0] else members[1]
+    q = by_ref.get(other.split(".")[0])
+    return bool(q and q.get("kind") == "R")
+
+
+def run_audit(nl: dict, chips: dict | None = None) -> list[dict]:
+    cons = load_constraints()["schematic"]["audit"]
+    sev_tbl = cons.get("audit_severity", {})
+    findings: list[dict] = []
+
+    def add(rule: str, target: str, msg: str, fix: str, sev: str | None = None):
+        findings.append({
+            "rule": rule,
+            "severity": sev or sev_tbl.get(rule, "WARN"),
+            "target": target,
+            "message": msg,
+            "fix": fix,
+        })
+
+    parts = nl.get("parts") or []
+    nets = nl.get("nets") or {}
+    by_ref = {p["ref"]: p for p in parts}
+    pack = chips if chips is not None else load_chips()
+    variants = (pack.get("variants") or pack)
+
+    decap_lo = float(cons["decap"]["min_nf"]) * 1e-9
+    decap_hi = float(cons["decap"]["max_uf"]) * 1e-6
+    xpin_set = {s.upper() for s in cons["xpin"]["pins"]}
+    pwr_set = {s.upper() for s in cons["decap_pins"]}
+    ng_set = {s.upper() for s in cons["ng_pins"]}
+
+    # ---- 1. 逐个 IC 查外围（去耦 / 跨引脚电容 / 控制脚上拉）
+    for p in parts:
+        if p.get("kind") not in IC_KINDS:
+            continue
+        pins = p.get("pins") or {}
+        logical = [str(k) for k in pins]
+        # 认不出任何电源脚/专用脚/控制脚 = 只有脚号没有功能名，外围根本没法定位
+        recognized = {s.upper() for s in logical} & (pwr_set | xpin_set | ng_set)
+        if not recognized:
+            add("SCH-AUDIT-BLIND", p["ref"],
+                f"{p['ref']}（{p.get('value') or p.get('mpn') or 'IC'}）的引脚名里没有任何可识别的"
+                f"电源脚/专用脚/控制脚，去耦与专用脚电容这两类检查全都没法做",
+                "查 datasheet 把功能名补进网表 pins，或改用 assets/chip-variants.json 里有 pins 映射的型号")
+            continue
+
+        for pin, net in pins.items():
+            up = str(pin).upper()
+            if not net:
+                continue
+            # 去耦：每个电源脚所在网络上要有 10nF~1uF
+            if up in pwr_set:
+                if not _has_decap(nets, by_ref, net, decap_lo, decap_hi):
+                    add("SCH-BOM-DECAP", f"{p['ref']}/{pin}",
+                        f"电源脚 {pin} 走 {net}，该网络上没有 10nF~1uF 去耦电容",
+                        f"在 {net} 与 GND 之间加 100nF，位置贴 {p['ref']} 这颗脚")
+            # 跨引脚电容：SETC/VREG/CP/BOOT/SS/COMP/TS 这类脚必须有电容
+            if up in xpin_set:
+                if not _has_cap_any(nets, by_ref, net):
+                    add("SCH-BOM-XPIN", f"{p['ref']}/{pin}",
+                        f"专用脚 {pin} 走 {net}，该网络上没有任何电容——这类脚不在 VCC 上，最容易被漏掉",
+                        f"按 datasheet 在 {pin} 与指定脚（GND 或另一专用脚）之间补电容，值见手册典型电路")
+            # 控制脚不得悬空：要么有电阻，要么被电源/地直接拉死
+            if up in ng_set:
+                railed = (nets.get(net) or {}).get("class") in ("power", "ground")
+                if not railed and not _has_pull_to_rail(nets, by_ref, net):
+                    add("SCH-BOM-PULL", f"{p['ref']}/{pin}",
+                        f"控制脚 {pin} 走 {net}，既没有上/下拉电阻，也没被电源或地直接钳位",
+                        f"加 10k 上拉/下拉，或明确接到固定电平；悬空会导致上电状态随机")
+
+    # ---- 2. LED 限流
+    for p in parts:
+        if p.get("kind") != "LED":
+            continue
+        ok = any(_has_series_r(nets, by_ref, p["ref"], net)
+                 for net in (p.get("pins") or {}).values()
+                 if net and (nets.get(net) or {}).get("class") != "ground")
+        if not ok:
+            add("SCH-BOM-LED", p["ref"],
+                f"{p['ref']}（{p.get('value') or 'LED'}）所在网络没有串联电阻",
+                "串限流电阻，值用 schem.py calc led 按实际 VCC 与颜色算")
+
+    # ---- 3. 接口连接器缺 ESD
+    has_tvs = any(q.get("kind") in ("TVS", "D") for q in parts)
+    for p in parts:
+        if p.get("kind") != "J":
+            continue
+        name = f"{p.get('value') or ''}{p.get('block') or ''}".upper()
+        if any(k in name for k in ("USB", "TYPE-C", "TYPEC", "RS485", "CAN", "HDMI", "RJ45")) and not has_tvs:
+            add("SCH-BOM-CONN", p["ref"],
+                f"{p['ref']}（{p.get('value')}）是外露接口，全板没有任何 TVS/ESD 保护器件",
+                "在接口信号与 VBUS 上加 TVS，选型用 schem.py calc tvs")
+
+    # ---- 4. 测试点
+    if not any(p.get("kind") == "TP" for p in parts):
+        add("SCH-BOM-TP", "(全板)",
+            "网表里没有任何测试点（kind=TP）",
+            "至少留调试 UART 的 TX/RX、复位、启动脚测试点；量产返修靠它们")
+
+    # ---- 5. 未连接脚（NC）
+    nc_list: list[tuple[str, str]] = []
+    for p in parts:
+        for pin, net in (p.get("pins") or {}).items():
+            if not net or net in ("-", "NC", "N/C"):
+                nc_list.append((p["ref"], str(pin)))
+            elif net not in nets:
+                nc_list.append((p["ref"], str(pin)))
+                add("SCH-NC-UNCONN", f"{p['ref']}/{pin}",
+                    f"引脚指向网络 {net}，但网表里没有这个网络的定义（悬空引用）",
+                    "补上该网络，或把它显式标成 NC")
+    if nc_list:
+        head = "、".join(f"{r}.{pin}" for r, pin in nc_list[:8])
+        more = f" 等 {len(nc_list)} 个" if len(nc_list) > 8 else ""
+        add("SCH-NC-UNCONN", "(未连接脚)",
+            f"{len(nc_list)} 个引脚没有接任何网络：{head}{more}",
+            "逐个确认是有意 NC 还是漏接；有意的要在原理图上打 NC 标记，别让它静默悬空")
+
+    # ---- 6. 供货分级（P0-P3）
+    for p in parts:
+        vid = p.get("variant")
+        if not vid or vid not in variants:
+            continue
+        sup = (variants[vid] or {}).get("supply") or {}
+        stock = sup.get("lcsc_stock")
+        lib = (sup.get("library") or "unknown").lower()
+        if stock is None:
+            add("SCH-SUPPLY-STOCK", f"{p['ref']} ({vid})",
+                f"库存未核验（lcsc_stock=null），无法判定是 P0 还是 P3——缺数据不等于合格",
+                "在立创商城查实际库存，填进 chip-variants.json 的 supply.lcsc_stock 与 stock_checked",
+                sev="UNKNOWN")
+            continue
+        stock = int(stock)
+        if stock <= 0:
+            add("SCH-SUPPLY-STOCK", f"{p['ref']} ({vid})",
+                f"库存 {stock}，这个料下不了单",
+                "换料，或在 chip-variants.json 里补替代型号", sev="FAIL")
+        elif stock < int(cons["supply"]["p2"]["min_stock"]):
+            add("SCH-SUPPLY-STOCK", f"{p['ref']} ({vid})",
+                f"库存 {stock} < {cons['supply']['p2']['min_stock']}，属 P3 慎用档",
+                "备注替代型号，或改选高库存型号", sev="WARN")
+        if lib not in ("basic", "preferred"):
+            add("SCH-SUPPLY-LIB", f"{p['ref']} ({vid})",
+                f"库别为 {lib}，不是基础库/优选库，长期供货与价格都不占优",
+                "优先换基础库（P0）或优选库（P1）型号", sev="INFO")
+
+    order = {"FAIL": 0, "WARN": 1, "UNKNOWN": 2, "INFO": 3}
+    findings.sort(key=lambda f: (order.get(f["severity"], 9), f["rule"], f["target"]))
+    return findings
+
+
+def _nc_snippet(nl: dict) -> str:
+    """未连接脚的标记骨架。API 未在本仓库验证，只给骨架，不许直接当成品跑。"""
+    rows = []
+    for p in nl.get("parts") or []:
+        for pin, net in (p.get("pins") or {}).items():
+            if not net or net in ("-", "NC", "N/C"):
+                rows.append(f'  {{ ref: "{p["ref"]}", pin: "{pin}" }}')
+    body = ",\n".join(rows) if rows else "  // 没有未连接引脚"
+    return f"""// 未连接脚标记骨架 —— 由 schem.py audit --emit-nc 生成
+// 警告：setState_NoConnected 的调用方式未在本仓库验证过。
+// 先按 references/eda-execution.md 的探测法确认对象与方法存在，再执行；不存在就只输出清单。
+const ncList = [
+{body}
+];
+const comps = eda.sch_PrimitiveComponent.getAll(undefined, true);
+for (const c of comps) {{
+  const ref = c.getState_Designator();
+  const hit = ncList.filter(x => x.ref === ref);
+  if (!hit.length) continue;
+  const pins = eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(c.getState_PrimitiveId());
+  for (const pin of pins) {{
+    const no = String(pin.getState_PinNumber ? pin.getState_PinNumber() : pin.getState_PadNumber?.());
+    if (!hit.some(x => x.pin === no)) continue;
+    if (typeof pin.setState_NoConnected === 'function') {{
+      pin.setState_NoConnected(true);
+      if (typeof pin.done === 'function') pin.done();
+    }} else {{
+      console.warn('该版本引脚对象没有 setState_NoConnected，跳过', ref, no);
+    }}
+  }}
+}}
+"""
+
+
+def cmd_audit(args) -> int:
+    nl = json.loads(Path(args.netlist).read_text(encoding="utf-8"))
+    findings = run_audit(nl)
+    order = {"FAIL": 0, "WARN": 1, "UNKNOWN": 2, "INFO": 3}
+    floor = order.get(args.min_severity, 3)
+    shown = [f for f in findings if order.get(f["severity"], 9) <= floor]
+    counts = {s: sum(1 for f in findings if f["severity"] == s)
+              for s in ("FAIL", "WARN", "UNKNOWN", "INFO")}
+
+    if args.json:
+        payload = {"counts": counts, "findings": shown}
+        if args.emit_nc:
+            payload["nc_snippet"] = _nc_snippet(nl)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"审计结果：FAIL {counts['FAIL']} / WARN {counts['WARN']} / "
+              f"UNKNOWN {counts['UNKNOWN']} / INFO {counts['INFO']}")
+        for f in shown:
+            mark = {"FAIL": "✗", "WARN": "!", "UNKNOWN": "?", "INFO": "i"}[f["severity"]]
+            print(f"[{f['severity']:<7}] {mark} {f['rule']:<20} {f['target']}")
+            print(f"            {f['message']}")
+            if f["fix"]:
+                print(f"            → {f['fix']}")
+        if counts["UNKNOWN"]:
+            print(f"\n有 {counts['UNKNOWN']} 条是「没查成」，不是通过。补数据后重跑。")
+        if args.emit_nc:
+            print("\n" + _nc_snippet(nl))
+
+    if args.gate:
+        if counts["FAIL"]:
+            print("\n判定：BLOCKED（有 FAIL，不许落笔）")
+            return 1
+        if counts["UNKNOWN"]:
+            print("\n判定：INCOMPLETE（有 UNKNOWN，数据不全，不算通过）")
+            return 2
+        print("\n判定：PASS（外围齐全、货源已核）")
+    return 1 if counts["FAIL"] else 0
+
+
 # ---------------------------------------------------------------- BOM
 
 def cmd_bom(args) -> int:
@@ -1538,6 +1843,17 @@ def main(argv=None) -> int:
     p.add_argument("--json", action="store_true")
     p.add_argument("--strict", action="store_true", help="WARN 也算不通过")
     p.set_defaults(func=cmd_erc)
+
+    p = sub.add_parser("audit", help="落笔前审计：外围完整性 / 供货分级 / 未连接脚")
+    p.add_argument("netlist")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--gate", action="store_true",
+                   help="有 FAIL 退出 1（BLOCKED），有 UNKNOWN 退出 2（INCOMPLETE）")
+    p.add_argument("--emit-nc", dest="emit_nc", action="store_true",
+                   help="额外输出未连接脚的标记骨架")
+    p.add_argument("--min-severity", dest="min_severity", default="INFO",
+                   choices=["FAIL", "WARN", "UNKNOWN", "INFO"])
+    p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("bom", help="网表 → BOM 骨架")
     p.add_argument("netlist")

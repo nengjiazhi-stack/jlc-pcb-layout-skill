@@ -268,3 +268,28 @@ MCU GPIO → 基极限流电阻 → 三极管基极
 6. 需求里出现互相冲突的约束（要小、要便宜、要工业级、要一周交付）。
 
 这六种情况停下来问，比按假设画完再返工便宜一个数量级。
+
+## 12. 落笔前审计判据（`schem.py audit`）
+
+ERC 查「连了什么、电气对不对」，audit 查「**该有的东西有没有**」。三条同时满足才算过了落笔门禁：ERC `FAIL 0`、audit `FAIL 0`、audit `UNKNOWN 0`。
+
+| 规则号 | 严重度 | 判据 | 对应本文 |
+|---|---|---|---|
+| `SCH-BOM-XPIN` | FAIL | IC 的 `SETC`/`VREG`/`VREGOUT`/`REGC`/`VCAP`/`VCP`/`VC`/`CP1`/`CP2`/`CP`/`BOOT`/`BST`/`SS`/`COMP`/`TS`/`TEMP`/`FILT` 脚所在网络必须有电容 | 器件手册典型电路 |
+| `SCH-BOM-DECAP` | FAIL | 每个电源脚（`VCC`/`VDD`/`VDDIO`/`VLOGIC`/`AVDD`/`DVDD`/`VBUS`/`VIN`）所在网络要有 10nF~1µF 电容，且另一端真接地 | §2.1 |
+| `SCH-BOM-PULL` | WARN | `EN`/`NRST`/`RESET`/`NCS`/`CS`/`SHDN`/`XSHUT`/`BOOT0`/`IO0`/`STBY`/`FAULT` 网络要么有电阻拉到电源/地，要么本身就是电源/地 | §1.2 |
+| `SCH-BOM-LED` | WARN | LED 必须与电阻**串联**（网络恰好 2 个成员且另一个是电阻） | §5 |
+| `SCH-BOM-CONN` | INFO | 外露接口（USB/Type-C/RS485/CAN/HDMI/RJ45）全板有没有 TVS | §6.3 |
+| `SCH-BOM-TP` | INFO | 全板有没有 `kind=TP` 的测试点 | — |
+| `SCH-NC-UNCONN` | INFO | 引脚没接网络，或指向网表里不存在的网络 | §1.2 |
+| `SCH-SUPPLY-STOCK` | 动态 | 库存 0→FAIL；<50→WARN；未核验→UNKNOWN | 立创商城库存 |
+| `SCH-SUPPLY-LIB` | INFO | 非基础库/优选库，长期供货不占优 | 立创商城库别 |
+| `SCH-AUDIT-BLIND` | UNKNOWN | IC 引脚名里没有任何可识别的电源脚/专用脚/控制脚 → 这两类检查**根本没跑** | — |
+
+**三条判定纪律**（都是为了堵「看起来查了、其实没查」）：
+
+1. **「网上有电容」不算去耦。** 容值必须在 10nF~1µF 内，且另一端真的接地。跨接在两路电源之间的电容过不了。
+2. **「网上有电阻」不算上拉。** 电阻另一端必须在电源或地上。串在信号路径里的限流/匹配电阻过不了。
+3. **「引脚名是数字」不算通过。** 只有 1/2/3 脚名的 IC，去耦和专用脚电容无法定位——报 `SCH-AUDIT-BLIND`，不许静默跳过。
+
+阈值全部在 `constraints.json → schematic.audit`，觉得太严太松直接改数字。
