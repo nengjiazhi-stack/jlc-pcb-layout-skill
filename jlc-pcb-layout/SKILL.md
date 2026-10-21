@@ -161,11 +161,21 @@ python scripts/plan.py assets/plan.example.json -o my_plan.json --emit-steps ste
 ## D. 验证
 
 ```bash
+# 0) 先拼快照：components-list 不返回走线，三份分开导出再合并
+easyeda pcb components-list --include-bbox --include-pads --json > comps.json
+easyeda pcb line-list --json > lines.json
+easyeda pcb via-list  --json > vias.json
+easyeda pcb outline-get --json > outline.json
+python scripts/snap.py --components comps.json --lines lines.json \
+    --vias vias.json --outline outline.json -o my_board.json
+
 python scripts/check.py my_board.json      # 规范符合性（本 skill 的规则库）
 easyeda pcb drc-check                      # EDA 原生 DRC：间距/短路/未布通
 easyeda pcb check                          # DFM 级：悬空端/酸角/丝印翻转/孤铜
 easyeda pcb report                         # 网络长度/差分偏斜
 ```
+
+**没有 `traces` 的快照不能用来判走线。** `components-list` 的输出里没有走线，早期写法从它里面取 `traces` 拿到的一直是空列表，于是 3W/直角/悬空/线宽四项全部静默跳过。`snap.py` 把这件事变成硬错误：缺 `--lines` 直接 exit 2，不生成"看起来正常"的空快照。确实还没布线才加 `--allow-empty`，此时 `check.py` 记 `FAB-DATA` UNKNOWN，`--gate` 判 `INCOMPLETE`。
 
 `check.py` 输出的每条违规都带**规则号**（如 `TY-6.5.6-12`、`AEST-ALIGN`、`EM-5.4.11`、`FAB-SHORT`），可回 `references/` 定位原文。严重度分三级：
 
@@ -281,6 +291,12 @@ python scripts/rules.py impedance --type microstrip|stripline|diff-microstrip|di
 # 计划
 python scripts/plan.py my_spec.json -o plan.json [--report] [--emit-steps steps.json] [--emit-sh] [--project <名>]
 
+# 快照（EDA 回读三源合并 → check.py 的输入）
+python scripts/snap.py --components comps.json --lines lines.json --vias vias.json \
+    --outline outline.json -o snapshot.json
+python scripts/snap.py --components comps.json --width 2362 --height 1772   # 没有 outline 时给板框尺寸
+python scripts/snap.py --components comps.json --allow-empty                # 确实未布线才加，会判 INCOMPLETE
+
 # 检查
 python scripts/check.py snapshot.json [--min-severity FAIL|WARN|UNKNOWN|INFO] [--json] [--strict]
 python scripts/check.py snapshot.json --netlist nl.json              # 并入 ERC + 块级布局约束
@@ -323,6 +339,7 @@ ls ~/.codex/skills/jlc-pcb-layout          # 或 ~/.workbuddy/skills/jlc-pcb-lay
 cd ~/.codex/skills/jlc-pcb-layout
 python scripts/rules.py width --current 3 --copper 1oz    # 应输出 1.5mm / 3.2A
 python scripts/plan.py assets/plan.example.json -o p.json --report
+python scripts/snap.py --components examples/eda-export.components.json --lines examples/eda-export.lines.json --vias examples/eda-export.vias.json --width 1000 --height 800 -o s.json   # 应报 器件 2 / 走线 3 / 过孔 1；去掉 --lines 应退出 2
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 python scripts/check.py examples/snapshot.decap.ok.json  --netlist examples/netlist.decap.json   # BLK-DECAP 应通过
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json   # 应报 BLK-DECAP FAIL
@@ -333,7 +350,7 @@ python scripts/schem.py erc examples/netlist.bad.json                           
 python scripts/schem.py chips                                                        # 应见 5 颗，其中 1 颗不可套用
 ```
 
-十条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
+十一条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
 
 
 ## 红线
@@ -370,6 +387,7 @@ references/
 scripts/
   rules.py                   计算与查表（线宽/间距/过孔/阻抗/层数）
   plan.py                    布局坐标计划生成器（输出 playbook / shell）
+  snap.py                    EDA 回读三源合并成 check.py 的快照（缺走线数据就拒绝生成）
   check.py                   规范符合性检查器（布局 16 类 + 走线 4 类 + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
   schem.py                   原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
 assets/
@@ -390,6 +408,9 @@ examples/
   snapshot.demo.fixed.json   回修后的同一块板（FAIL 0 / WARN 6 / UNKNOWN 2，UNKNOWN 明确表示"没查"）
   snapshot.aesthetics.json   整洁度反面样例（对齐/间距/朝向/角度各一条，另含不该报的交错双排）
   snapshot.placement.json    元器件摆放专项反面样例（FAIL 0 / WARN 10，PL-* 八类各中一条）
+  eda-export.components.json 假的 components-list 输出（验证 snap.py 的器件/焊盘字段映射）
+  eda-export.lines.json      假的 line-list 输出（3 段走线 / 2 个网络）
+  eda-export.vias.json       假的 via-list 输出（1 个过孔）
 ```
 
 ## 命令写法约定

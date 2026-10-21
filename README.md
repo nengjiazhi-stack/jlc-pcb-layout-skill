@@ -11,14 +11,14 @@
 ## 两块能力
 
 ```
-客户需求 ──schem.py──► 网表 ──ERC──► 落笔原理图 ──► 导入PCB ──plan.py──► 布局计划 ──► 走线 ──check.py──► 投板
+客户需求 ──schem.py──► 网表 ──ERC──► 落笔原理图 ──► 导入PCB ──plan.py──► 布局计划 ──► 走线 ──snap.py──► 快照 ──check.py──► 投板
            原理图                     ↑ 不合规停在这                            PCB Layout
 ```
 
 | | 原理图 | PCB Layout |
 |---|---|---|
 | 输入 | 客户功能描述 | 网表 + 板框约束 |
-| 核心工具 | `schem.py`（spec/netlist/erc/bom/bind/playbook） | `plan.py` + `check.py` |
+| 核心工具 | `schem.py`（spec/netlist/erc/bom/bind/playbook） | `plan.py` + `snap.py` + `check.py` |
 | 规则库 | 15 个功能块 + 5 颗芯片实例 + 23 条 ERC | 6 套企业规范 + 38 条 DRC/DFM/块级规则 |
 | 数值 | 上拉/限流/负载电容/偏置/电感/TVS 档位 | 载流线宽/电气间距/过孔/叠层/阻抗 |
 | 落笔 | `eda.sch_*` API | `easyeda` CLI + `eda.pcb_*` API |
@@ -49,6 +49,7 @@
 计算层  scripts/schem.py                   11 个电路计算器
         scripts/rules.py                   载流/间距/过孔/层数/阻抗
 执行层  scripts/plan.py                    布局坐标计划生成器
+        scripts/snap.py                    EDA 回读三源合并成快照（缺走线数据直接报错）
         scripts/check.py                   PCB 合规检查器（38 个规则号，四态含 UNKNOWN）
         references/eda-execution.md        两套 API 的落笔顺序与坑
 ```
@@ -89,6 +90,7 @@ python scripts/schem.py netlist examples/spec.example.json -o n.json --report
 python scripts/schem.py erc examples/netlist.example.json
 python scripts/schem.py erc examples/netlist.bad.json
 python scripts/rules.py width --current 3 --copper 1oz
+python scripts/snap.py --components examples/eda-export.components.json --lines examples/eda-export.lines.json --vias examples/eda-export.vias.json --width 1000 --height 800 -o s.json
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 ```
 
@@ -101,6 +103,7 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 检查结果：FAIL 4 / WARN 15 / INFO 2                    ← 反面样例：LED 无限流、线圈无续流、TVS 选小、CC 缺下拉
 
 最小线宽：1.5mm (59.1mil)   该档载流：3.2A
+器件 2 / 走线 3（网络 2） / 过孔 1                     ← snap.py 三源合并；缺 --lines 会直接退出 2
 检查结果：FAIL 1 / WARN 14 / UNKNOWN 2 / INFO 1        ← demo 板：故意埋的 VDD×GND 短路
 ```
 
@@ -108,7 +111,7 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 
 `snapshot.demo.json` 的 FAIL 1 同样是故意埋的短路，用来演示 `check.py` 能抓到；修好的版本是 `snapshot.demo.fixed.json`：`FAIL 0 / WARN 6 / UNKNOWN 2`。
 
-注意那个 **UNKNOWN 2**——修好之后反而不是"通过"。这两条是"缺 traces 数据"和"缺器件高度"，说明这两类检查**根本没跑**。以前它们混在 INFO 里，`FAIL 0` 看起来像合格；现在独立成 UNKNOWN，`--gate` 判 `INCOMPLETE`。**测不到不等于通过，这是从执行层项目学来的最重要一条。**
+注意那个 **UNKNOWN 2**——修好之后反而不是"通过"。这两条是 `PL-FID`（快照里没有基准点 fiducials）和 `PL-HEIGHT`（器件没有 height_mm），说明这两类检查**根本没跑**。以前它们混在 INFO 里，`FAIL 0` 看起来像合格；现在独立成 UNKNOWN，`--gate` 判 `INCOMPLETE`。**测不到不等于通过，这是从执行层项目学来的最重要一条。**
 
 ## 原理图部分
 
@@ -187,9 +190,9 @@ jlc-pcb-layout-skill/
     ├── SKILL.md
     ├── agents/openai.yaml  Codex 入口：显示名与默认提示词
     ├── references/         原理图工作流/功能块/ERC 判据 + 6 份规范转写 + 执行手册
-    ├── scripts/            schem.py / rules.py / plan.py / check.py
+    ├── scripts/            schem.py / rules.py / plan.py / snap.py / check.py
     ├── assets/             constraints.json（数值唯一真源）+ circuit-blocks.json
-    └── examples/           需求样例、成品 spec/netlist、反面 netlist、6 个 PCB 快照、两份走查
+    └── examples/           需求样例、成品 spec/netlist、反面 netlist、6 个 PCB 快照、EDA 回读样本、两份走查
 ```
 
 阈值全部集中在 `assets/constraints.json`（原理图部分在 `schematic` 节），觉得哪个太严太松直接改数字，不用改代码。功能块在 `assets/circuit-blocks.json`，加块的方法见 `references/circuit-blocks.md` 末节。

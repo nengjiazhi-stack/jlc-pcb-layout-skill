@@ -1,0 +1,20 @@
+{
+  "components": [
+    {
+      "designator": "U1", "layer": 1, "x": 300, "y": 400, "rotation": 0,
+      "width": 100, "height": 80, "footprint": "SOP-8",
+      "pads": [
+        {"x": 250, "y": 400, "net": "VDD"},
+        {"x": 350, "y": 320, "net": "GND"}
+      ]
+    },
+    {
+      "designator": "R1", "layer": 1, "x": 600, "y": 400, "rotation": 0,
+      "width": 60, "height": 40, "footprint": "R0603",
+      "pads": [
+        {"x": 570, "y": 400, "net": "VDD"},
+        {"x": 630, "y": 320, "net": "GND"}
+      ]
+    }
+  ]
+}

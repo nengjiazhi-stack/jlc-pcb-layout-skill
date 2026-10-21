@@ -20,6 +20,7 @@
 | 规范层 | `jlc-pcb-layout/references/` | 条款化规范，带原始编号可回查 | 无 |
 | 计算层 | `jlc-pcb-layout/scripts/rules.py` | 载流线宽 / 电气间距 / 过孔 / 层数 / 阻抗 | 仅 Python 3.8+，纯标准库 |
 | 计划层 | `jlc-pcb-layout/scripts/plan.py` | 出摆件坐标计划 | 同上 |
+| 快照层 | `jlc-pcb-layout/scripts/snap.py` | EDA 回读三源（器件/走线/过孔）合并成检查器输入 | 同上 |
 | 检查层 | `jlc-pcb-layout/scripts/check.py` | 16 类规范符合性检查（含图面整洁度 `AEST-*`） | 同上 |
 | 落笔层 | 需另装 `easyeda` CLI | 把计划写进 EDA 画布 | 见「四、可选依赖」 |
 
@@ -67,12 +68,13 @@ python scripts/schem.py erc examples/netlist.bad.json
 python scripts/schem.py chips
 python scripts/rules.py width --current 3 --copper 1oz
 python scripts/plan.py assets/plan.example.json -o p.json --report
+python scripts/snap.py --components examples/eda-export.components.json --lines examples/eda-export.lines.json --vias examples/eda-export.vias.json --width 1000 --height 800 -o s.json
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json
 ```
 
-期望输出（九条，顺序与上面一一对应）：
+期望输出（十条，顺序与上面一一对应）：
 
 ```
 器件 76（其中待绑定 16/16），网络 57，功能块 11
@@ -108,6 +110,12 @@ esp32s3_wroom1     → mcu_min          ESP32-S3-WROOM-1
 ```
 
 ```
+snapshot 已写入 s.json
+  板框 1000 × 800 mil / 2 层 / 1.6mm
+  器件 2 / 走线 3（网络 2） / 过孔 1
+```
+
+```
 检查结果：FAIL 1 / WARN 14 / UNKNOWN 2 / INFO 1
 [FAIL   ] ✗ FAB-SHORT      VDD × GND
 ```
@@ -129,7 +137,7 @@ esp32s3_wroom1     → mcu_min          ESP32-S3-WROOM-1
 
 `snapshot.demo.json` 的 **FAIL 1 是正常的**——它是故意埋了缺陷的示例板（VDD×GND 短路），用来演示检查器能抓到。修好的版本 `snapshot.demo.fixed.json` 跑出来是 `FAIL 0 / WARN 6 / UNKNOWN 2`。`netlist.bad.json` 的 4 个 FAIL 同理，是反面样例（LED 无限流、线圈无续流、TVS 选小、CC 缺下拉）。
 
-`UNKNOWN` 不是错误、也不是通过：它表示**这项检查没跑**（缺 traces 数据、缺器件高度等）。修好的板子出现 `UNKNOWN 2` 是正常的，`--gate` 会判 `INCOMPLETE`。要消除它，就把对应的数据补进快照。
+`UNKNOWN` 不是错误、也不是通过：它表示**这项检查没跑**（缺器件高度、缺丝印图元、缺铺铜几何等）。走线数据不该再缺——`snap.py` 缺 `--lines` 会直接退出 2，不会生成一个看起来正常的空快照。
 
 **这些 FAIL 都不是装坏了**，而是"检查器真的会报错"的证据。如果反面样例跑出来 0 违规，说明装坏了。
 
@@ -192,6 +200,7 @@ jlc-pcb-layout/
     schem.py               原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
     rules.py               六个计算子命令
     plan.py                布局坐标计划生成器
+    snap.py                EDA 回读三源合并成快照（缺走线数据拒绝生成，exit 2）
     check.py               规范符合性检查器（四态含 UNKNOWN；--gate 单一判定；--netlist 并入 ERC 与块级约束）
   examples/
     walkthrough.md         60×45 四层板完整走查（含真实输出）
@@ -207,4 +216,7 @@ jlc-pcb-layout/
     snapshot.demo.fixed.json  修好后的快照（FAIL 0 / WARN 6）
     snapshot.aesthetics.json  整洁度反面样例（AEST-ALIGN/PITCH/ROT/ANGLE 各一条）
     snapshot.placement.json   元器件摆放反面样例（PL-ORI/HEIGHT/AUTO-IND/MECH-CG/MAINT-CONN/FID）
+    eda-export.components.json 假的 components-list 输出（验证 snap.py 字段映射）
+    eda-export.lines.json  假的 line-list 输出（3 段 / 2 网络）
+    eda-export.vias.json   假的 via-list 输出（1 个过孔）
 ```

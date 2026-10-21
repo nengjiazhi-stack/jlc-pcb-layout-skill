@@ -366,7 +366,8 @@ def check_board(snap: dict, con: dict, rep: Report):
         check_traces(snap, con, rep, traces, vias, comps)
     else:
         rep.unknown("FAB-DATA", "traces", "没有 traces 数据 → 3W/直角/悬空/线宽一致性检查跳过",
-                 "导出 `pcb line list --json` 后并入 snapshot")
+                    "导出 `pcb line list --json` 后用 scripts/snap.py 合并进快照；"
+                    "这份快照不能用于交付")
 
     # ---- 10) 过孔孔厚比（有板厚才判定）
     if vias and board.get("thickness_mm"):

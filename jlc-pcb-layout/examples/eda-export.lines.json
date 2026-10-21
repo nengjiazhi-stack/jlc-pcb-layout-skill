@@ -1,0 +1,7 @@
+{
+  "lines": [
+    {"net": "VDD", "layer": 1, "startX": 250, "startY": 400, "endX": 410, "endY": 400, "lineWidth": 20},
+    {"net": "VDD", "layer": 1, "startX": 410, "startY": 400, "endX": 570, "endY": 400, "lineWidth": 20},
+    {"net": "GND", "layer": 1, "startX": 350, "startY": 320, "endX": 630, "endY": 320, "lineWidth": 20}
+  ]
+}

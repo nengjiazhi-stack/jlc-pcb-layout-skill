@@ -171,21 +171,22 @@ eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 4. **画布归属**：布线前存 `pcb.line.list` 基线，布完比增量（按连通 primitiveId 集合，不按段数——EDA 会在交点处自动切段）。对不上就是有非本流程的走线，先停下问，别在别人的结果上继续改。
 
 ```bash
-easyeda pcb components-list --include-bbox --json > comps.json     # 参数名以 easyeda actions 为准
-python - <<'PY'   # 转成 check.py 要的 snapshot
-import json
-comps = json.load(open('comps.json'))
-snap = {"board": {"width_mil": 2362, "height_mil": 1772, "copper_layers": 4,
-                  "thickness_mm": 1.6, "wave_solder": False},
-        "components": comps["components"],
-        "traces": comps.get("traces", []),
-        "vias": comps.get("vias", [])}
-json.dump(snap, open('snapshot.json','w'), ensure_ascii=False, indent=2)
-PY
+easyeda pcb components-list --include-bbox --include-pads --json > comps.json   # 参数名以 easyeda actions 为准
+easyeda pcb line-list --json > lines.json
+easyeda pcb via-list  --json > vias.json
+easyeda pcb outline-get --json > outline.json
+python scripts/snap.py --components comps.json --lines lines.json \
+    --vias vias.json --outline outline.json -o snapshot.json
 python check.py snapshot.json --min-severity WARN
 ```
 
-> 字段名以 `easyeda actions` / 实际输出为准。如果 CLI 的输出结构不一致，**不要硬凑**——直接把 `components` 数组里每项的 `designator/layer/x/y/rotation/w/h/pads` 映射过来即可，`check.py` 只看这几个键。
+> **三份必须分开导出。** `components-list` 的输出里**没有走线**，`line-list` 里没有器件。早期这一段的写法是
+> `"traces": comps.get("traces", [])` —— 从 components-list 的响应里取走线，永远拿到空列表，
+> `check_traces()` 整段被跳过，3W/直角/悬空/线宽四项从来没跑过，输出里只剩一条 `FAB-DATA` UNKNOWN。
+> 现在由 `snap.py` 合并；缺 `--lines` 时它**退出码 2 并且不生成快照**，不再产出一个"看起来正常"的空文件。
+>
+> 字段名以 `easyeda actions` / 实际输出为准。`snap.py` 只做常见别名归一化（`startX/startY`、`x1/y1`、`from:{x,y}`；
+> `lineWidth/width`；`width/height` 或 `bbox`），对不上会指名报错，不猜。
 
 ---
 
