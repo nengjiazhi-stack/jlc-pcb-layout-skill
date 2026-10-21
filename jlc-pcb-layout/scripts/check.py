@@ -32,6 +32,8 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
+import heapq
 import json
 import math
 import re
@@ -511,10 +513,382 @@ def _seg(r: dict):
     return (float(r["x1"]), float(r["y1"]), float(r["x2"]), float(r["y2"]))
 
 
+# ------------------------------------------------------- 冗余走线（RT-*，只读几何判据）
+# 重复段不短路、残段不开路，电气上"合法"，所以 ERC/DRC 一条都查不出来。
+# 这里只判几何，不判意图：刻意保留的测试点桩、天线焊盘、蛇形等长必须在
+# constraints.json → trace_redundancy.allow 里逐条登记，否则照报（并进交付物）。
+
+def _seglen(s) -> float:
+    return math.hypot(s[2] - s[0], s[3] - s[1])
+
+
+def _red_cfg(con: dict) -> dict:
+    cfg = dict(con.get("trace_redundancy") or {})
+    for k, v in (("collinear_angle_deg", 3.0), ("collinear_tol_mil", 1.5),
+                 ("dup_overlap_ratio", 0.8), ("dup_min_len_mil", 20.0),
+                 ("stub_min_len_factor", 10.0), ("stub_min_len_mil", 200.0),
+                 ("loop_min_perimeter_mil", 50.0),
+                 ("detour_ratio", 1.8), ("detour_ratio_high_speed", 1.3)):
+        cfg.setdefault(k, v)
+    cfg.setdefault("high_speed_patterns", [])
+    cfg.setdefault("allow", [])
+    cfg.setdefault("severity", {})
+    return cfg
+
+
+def _waived(cfg, net, rule, measured=None):
+    """allow 命中就返回登记理由，否则 None。
+
+    带 max_len_mil 的登记只豁免到该长度，超过照报 —— 避免"登记一次永久静音"。
+    """
+    for a in cfg["allow"]:
+        if not fnmatch.fnmatch(str(net), str(a.get("net", ""))):
+            continue
+        rules = a.get("rules") or []
+        if rules and not any(fnmatch.fnmatch(rule, str(r)) for r in rules):
+            continue
+        cap = a.get("max_len_mil")
+        if cap is not None and measured is not None and measured > float(cap):
+            continue
+        return a.get("reason") or "allow 登记"
+    return None
+
+
+def _dup_pairs(pairs, cfg):
+    """同层同网络两段共线且投影重叠 → 重复铜。返回 (i, j, 重叠长, 长i, 长j)。"""
+    ang_max = float(cfg["collinear_angle_deg"])
+    tol = float(cfg["collinear_tol_mil"])
+    ratio_min = float(cfg["dup_overlap_ratio"])
+    min_len = float(cfg["dup_min_len_mil"])
+    out = []
+    for i in range(len(pairs)):
+        sa = pairs[i][0]
+        la = _seglen(sa)
+        if la < min_len:
+            continue
+        ux, uy = (sa[2] - sa[0]) / la, (sa[3] - sa[1]) / la
+        for j in range(i + 1, len(pairs)):
+            sb = pairs[j][0]
+            lb = _seglen(sb)
+            if lb < min_len:
+                continue
+            sin = abs(ux * (sb[3] - sb[1]) - uy * (sb[2] - sb[0])) / lb
+            if math.degrees(math.asin(min(1.0, sin))) > ang_max:
+                continue
+            d1 = abs((sb[0] - sa[0]) * uy - (sb[1] - sa[1]) * ux)
+            d2 = abs((sb[2] - sa[0]) * uy - (sb[3] - sa[1]) * ux)
+            if max(d1, d2) > tol:
+                continue
+            t0 = (sb[0] - sa[0]) * ux + (sb[1] - sa[1]) * uy
+            t1 = (sb[2] - sa[0]) * ux + (sb[3] - sa[1]) * uy
+            ov = min(max(t0, t1), la) - max(min(t0, t1), 0.0)
+            if ov > 0 and ov / min(la, lb) >= ratio_min:
+                out.append((i, j, ov, la, lb))
+    return out
+
+
+def _split_touch(pairs, tol: float = 3.0):
+    """把端点落在别的段内部的段切开，让 T 接成为图上的真节点。
+
+    不切的话，"从另一条线中段分出去的残段"在图上就是一段悬空的孤立线，
+    分枝长度和自环都算不准。
+    """
+    segs = [p[0] for p in pairs]
+    out = []
+    for k, (s, w) in enumerate(pairs):
+        cuts = []
+        dx, dy = s[2] - s[0], s[3] - s[1]
+        L2 = dx * dx + dy * dy
+        if L2 <= 0:
+            continue
+        for j, t in enumerate(segs):
+            if j == k:
+                continue
+            for (px, py) in ((t[0], t[1]), (t[2], t[3])):
+                if _pt_seg_dist(px, py, s) > tol:
+                    continue
+                u = ((px - s[0]) * dx + (py - s[1]) * dy) / L2
+                if 1e-6 < u < 1 - 1e-6:
+                    cuts.append((u, px, py))
+        cuts.sort()
+        cx, cy = s[0], s[1]
+        for (_u, px, py) in cuts:
+            if math.hypot(px - cx, py - cy) > 0.5:
+                out.append(((cx, cy, px, py), w))
+            cx, cy = px, py
+        if math.hypot(s[2] - cx, s[3] - cy) > 0.5:
+            out.append(((cx, cy, s[2], s[3]), w))
+    return out
+
+
+def _shortest(adj, edges, src, dst, skip: int):
+    """src→dst 的最短铜长（排除 skip 这条边）；用于算自环周长。"""
+    dist = {src: 0.0}
+    pq = [(0.0, src)]
+    while pq:
+        d, a = heapq.heappop(pq)
+        if d > dist.get(a, 1e18) + 1e-9:
+            continue
+        if a == dst:
+            return d
+        for e in adj.get(a, []):
+            if e == skip:
+                continue
+            b = edges[e][1] if edges[e][0] == a else edges[e][0]
+            nd = d + edges[e][2]
+            if nd < dist.get(b, 1e18) - 1e-9:
+                dist[b] = nd
+                heapq.heappush(pq, (nd, b))
+    return None
+
+
+def _mst_manhattan(pts) -> float:
+    n = len(pts)
+    if n < 2:
+        return 0.0
+    in_tree = [False] * n
+    best = [1e18] * n
+    best[0] = 0.0
+    total = 0.0
+    for _ in range(n):
+        k = min((i for i in range(n) if not in_tree[i]), key=lambda i: best[i])
+        in_tree[k] = True
+        total += best[k]
+        for i in range(n):
+            if in_tree[i]:
+                continue
+            d = abs(pts[i][0] - pts[k][0]) + abs(pts[i][1] - pts[k][1])
+            if d < best[i]:
+                best[i] = d
+    return total
+
+
+def _stub_scan(nodes, adj, edges, anchored, cfg):
+    """从每个自由端走到第一个岔路口或锚点，累计铜长。返回超过阈值的残段。
+
+    长度按"从自由端一路走到第一个分叉"算，不是按单段算 —— 残段常常是两三段
+    接起来的，只看单段会漏。
+    """
+    out = []
+    visited = set()
+    for k in sorted(adj):
+        if len(adj[k]) != 1 or k in anchored:
+            continue
+        e0 = adj[k][0]
+        if e0 in visited:
+            continue
+        total, cur, e, guard = 0.0, k, e0, 0
+        while e is not None and guard < 4000:
+            guard += 1
+            visited.add(e)
+            total += edges[e][2]
+            cur = edges[e][1] if edges[e][0] == cur else edges[e][0]
+            if cur in anchored or len(adj.get(cur, [])) != 2:
+                break
+            rest = [x for x in adj[cur] if x != e]
+            e = rest[0] if rest else None
+        need = max(float(cfg["stub_min_len_mil"]),
+                   float(cfg["stub_min_len_factor"]) * max(1.0, edges[e0][3]))
+        if total < need:
+            continue
+        want = nodes[k]
+        tail = min((edges[e0][4][0:2], edges[e0][4][2:4]),
+                   key=lambda q: (q[0] - want[0]) ** 2 + (q[1] - want[1]) ** 2)
+        out.append((tail, total, need))
+    return out
+
+
+def check_redundancy(con, rep, traces, vias, comps) -> list:
+    """RT-DUP-01 / RT-STUB-02 / RT-LOOP-03 / RT-DETOUR-04。
+
+    返回被 RT-STUB 升级报出的端点坐标，供 TY-6.5.6-5 去重（同一个缺陷不报两遍）。
+    """
+    cfg = _red_cfg(con)
+    end_tol = 22.0
+    node_tol = 8.0
+    sev = lambda r: cfg["severity"].get(r, "WARN")
+    escalated = []
+    waived = {}
+
+    pad_pts, via_pts, loose_pads = {}, {}, []
+    for c in comps:
+        for p in c.get("pads") or []:
+            if p.get("net"):
+                pad_pts.setdefault(str(p["net"]), []).append((float(p["x"]), float(p["y"])))
+            else:
+                # 没有网络名的焊盘：导线落上去时判不了它属于谁，只能按"落到了焊盘"处理，
+                # 不能按悬空报 —— 报错要能站得住，而不是靠猜。
+                loose_pads.append((float(p["x"]), float(p["y"])))
+    for v in vias:
+        if v.get("net"):
+            via_pts.setdefault(str(v["net"]), []).append((float(v["x"]), float(v["y"])))
+
+    groups = {}
+    for t in traces:
+        groups.setdefault(str(t.get("net", "?")), []).append(t)
+
+    # 残段判据靠"端点有没有落在焊盘/过孔上"。整份快照连一个焊盘坐标都没有时，
+    # 它判不了 —— 这不叫通过，也不该编出 FAIL：缺数据已由 check_dataset 的
+    # FAB-DATA UNKNOWN 报出，这里不重复记一条，避免同一件事算两次。
+    can_stub = bool(pad_pts) or bool(via_pts)
+    no_anchor_nets = []
+
+    def note_waive(net, rule, why, measured, where):
+        waived.setdefault(rule, []).append(f"{net}@{where}")
+        rep.info("RT-ALLOW", f"net {net} @{where}",
+                 f"{rule} 按登记豁免（量得 {measured:.0f}）：{why}",
+                 "豁免项必须写进交付物的「允许保留的冗余」并附理由")
+
+    for net in sorted(groups):
+        anchors = pad_pts.get(net, []) + via_pts.get(net, [])
+        by_layer = {}
+        for t in groups[net]:
+            by_layer.setdefault(int(t.get("layer", 1)), []).append(t)
+
+        tree_len = 0.0
+        for layer in sorted(by_layer):
+            raw = [(_seg(t), float(t.get("width", 0) or 0)) for t in by_layer[layer]]
+
+            # ---- RT-DUP-01 重复/重叠共线段
+            drop = set()
+            for (i, j, ov, la, lb) in _dup_pairs(raw, cfg):
+                short_i = i if la <= lb else j
+                if short_i in drop:
+                    continue
+                drop.add(short_i)
+                where = (f"{raw[short_i][0][0]:.0f},{raw[short_i][0][1]:.0f}"
+                         f"→{raw[short_i][0][2]:.0f},{raw[short_i][0][3]:.0f}")
+                why = _waived(cfg, net, "RT-DUP-01", ov)
+                if why:
+                    note_waive(net, "RT-DUP-01", why, ov, where)
+                    continue
+                rep.add(sev("RT-DUP-01"), "RT-DUP-01", f"net {net} layer {layer}",
+                        f"两段走线共线重叠 {ov:.0f}mil（占较短段 {ov / min(la, lb) * 100:.0f}%），"
+                        f"位置 {where}：同一段铜画了两遍",
+                        "删掉一段（先删后画）；重叠铜蚀刻后留残渣，阻抗也会突变")
+
+            kept = [p for k, p in enumerate(raw) if k not in drop]
+            if not kept:
+                continue
+            split = _split_touch(kept)
+
+            nodes, adj, edges = [], {}, []
+
+            def node_of(x, y):
+                for k, (nx, ny) in enumerate(nodes):
+                    if (x - nx) ** 2 + (y - ny) ** 2 <= node_tol ** 2:
+                        return k
+                nodes.append((x, y))
+                return len(nodes) - 1
+
+            for (s, w) in split:
+                u, v = node_of(s[0], s[1]), node_of(s[2], s[3])
+                if u == v:
+                    continue
+                e = len(edges)
+                edges.append((u, v, _seglen(s), w, s))
+                adj.setdefault(u, []).append(e)
+                adj.setdefault(v, []).append(e)
+            if not edges:
+                continue
+
+            anchored = set()
+            for k, (nx, ny) in enumerate(nodes):
+                if any((nx - ax) ** 2 + (ny - ay) ** 2 <= end_tol ** 2
+                       for ax, ay in anchors + loose_pads):
+                    anchored.add(k)
+
+            # ---- RT-STUB-02 残段：从自由端走到第一个岔路口/锚点，长度超标就 FAIL
+            if can_stub and anchors:
+                for (tail, total, need) in _stub_scan(nodes, adj, edges, anchored, cfg):
+                    why = _waived(cfg, net, "RT-STUB-02", total)
+                    if why:
+                        note_waive(net, "RT-STUB-02", why, total, f"{tail[0]:.0f},{tail[1]:.0f}")
+                        escalated.append((float(tail[0]), float(tail[1])))
+                        continue
+                    rep.add(sev("RT-STUB-02"), "RT-STUB-02",
+                            f"net {net} layer {layer} @{tail[0]:.0f},{tail[1]:.0f}",
+                            f"残段（自由端）总长 {total:.0f}mil ≥ 阈值 {need:.0f}mil：末端没有焊盘、"
+                            f"过孔或其它走线，是天线也是蚀刻残渣",
+                            "删掉这段，或把它接到该接的脚上；只短于阈值的小尾巴按 TY-6.5.6-5 记 WARN")
+                    escalated.append((float(tail[0]), float(tail[1])))
+            elif can_stub:
+                no_anchor_nets.append(net)
+
+            # ---- RT-LOOP-03 同网络自环（TY-6.5.6-8）
+            parent = list(range(len(nodes)))
+
+            def find(a):
+                while parent[a] != a:
+                    parent[a] = parent[parent[a]]
+                    a = parent[a]
+                return a
+
+            loops = 0
+            for e, (u, v, L, _w, s) in enumerate(edges):
+                ru, rv = find(u), find(v)
+                if ru != rv:
+                    parent[ru] = rv
+                    tree_len += L          # 只累计生成树：闭合边不重复算进总长
+                    continue
+                per = _shortest(adj, edges, u, v, e)
+                if per is None:
+                    continue
+                per += L
+                if per < float(cfg["loop_min_perimeter_mil"]):
+                    continue
+                loops += 1
+                why = _waived(cfg, net, "RT-LOOP-03", per)
+                if why:
+                    note_waive(net, "RT-LOOP-03", why, per, f"{s[0]:.0f},{s[1]:.0f}")
+                    continue
+                if loops <= 3:
+                    rep.add(sev("RT-LOOP-03"), "RT-LOOP-03",
+                            f"net {net} layer {layer} @{s[0]:.0f},{s[1]:.0f}",
+                            f"该网络形成闭合回路，周长 {per:.0f}mil（≥{cfg['loop_min_perimeter_mil']:.0f}mil）",
+                            "断开回路（TY-6.5.6-8）：闭合铜环会拾取磁场，也扩大回流面积")
+            if loops > 3:
+                rep.add(sev("RT-LOOP-03"), "RT-LOOP-03", f"net {net} layer {layer}",
+                        f"另有 {loops - 3} 处闭合回路未逐条列出", "统一断开")
+
+        # ---- RT-DETOUR-04 绕行：生成树铜长 / 引脚曼哈顿最小生成树
+        terms = pad_pts.get(net, [])
+        if len(terms) >= 2 and tree_len > 0:
+            ref = _mst_manhattan(terms)
+            if ref > 0:
+                ratio = tree_len / ref
+                hs = any(fnmatch.fnmatch(net, p) for p in cfg["high_speed_patterns"])
+                limit = float(cfg["detour_ratio_high_speed"] if hs else cfg["detour_ratio"])
+                if ratio > limit:
+                    why = _waived(cfg, net, "RT-DETOUR-04")
+                    if why:
+                        note_waive(net, "RT-DETOUR-04", why, ratio * ref, "全网络")
+                    else:
+                        rep.add(sev("RT-DETOUR-04"), "RT-DETOUR-04", f"net {net}",
+                                f"实际铜长 {tree_len:.0f}mil 是最短可能的 {ratio:.2f} 倍"
+                                f"（阈值 {limit:.1f}{'，高速网络' if hs else ''}）",
+                                "重排引脚顺序或换层走捷径；绕远等于加大环路面积与串扰")
+
+    if no_anchor_nets:
+        shown = "、".join(sorted(set(no_anchor_nets))[:5])
+        rep.unknown("RT-STUB-02", "全板",
+                    f"{len(set(no_anchor_nets))} 个网络在这份快照里一个焊盘/过孔坐标都没有"
+                    f"（{shown}），残段判据无法判断端点是否落在焊盘上 → 未判定",
+                    "导出时加 --include-pads/--include-vias；若确实没有焊盘，这段铜就是孤立的")
+
+    if waived:
+        total = sum(len(v) for v in waived.values())
+        detail = "；".join(f"{r} {len(v)} 处" for r, v in sorted(waived.items()))
+        rep.info("RT-ALLOW", "全板", f"allow 登记豁免 {total} 处（{detail}）",
+                 "逐条写进交付物；豁免不等于「没这问题」，而是有理由地留着")
+    return escalated
+
+
 def check_traces(snap, con, rep, traces, vias, comps):
-    """走线层检查：悬空端、直角/锐角、3W、同网络线宽一致、异网短路。"""
+    """走线层检查：悬空端、直角/锐角、3W、同网络线宽一致、异网短路、冗余走线。"""
     tol = 8.0            # 线段接头重合容差
     end_tol = 22.0       # 线头落点容差：走线通常停在焊盘边缘而不是中心
+    escalated = check_redundancy(con, rep, traces, vias, comps)
     anchors = []
     for c in comps:
         for p in c.get("pads") or []:
@@ -529,6 +903,9 @@ def check_traces(snap, con, rep, traces, vias, comps):
     dangling = {}
     for t in traces:
         for (ex, ey) in ((float(t["x1"]), float(t["y1"])), (float(t["x2"]), float(t["y2"]))):
+            # 已被 RT-STUB-02 升级为 FAIL 的长残段不再报 WARN：同一个缺陷不报两遍
+            if any((ex - sx) ** 2 + (ey - sy) ** 2 <= 1.0 for sx, sy in escalated):
+                continue
             hit = any((ex - ax) ** 2 + (ey - ay) ** 2 <= end_tol ** 2 for ax, ay in anchors)
             if not hit:
                 hit = sum(1 for (ox, oy) in ends

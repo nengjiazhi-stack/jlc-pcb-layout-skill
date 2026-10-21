@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "冗余走线（RT-*）正面样例：板子与 snapshot.redundancy.json 完全相同，只把多余铜清掉。",
+    "",
+    "清理动作（就是落笔时该做的三件事）：",
+    "1) VIN  删掉叠在上面的那段副线，只留一条             → RT-DUP-01 归零",
+    "2) STUB 整段删掉（R1 那个脚改为未布线，而不是留 500mil 天线）→ RT-STUB-02 归零",
+    "3) GND  去掉多余的那条直连，改成单条绕行路径，不再闭合  → RT-LOOP-03 归零",
+    "4) DET  改走直线（800mil，正好等于引脚曼哈顿距离）      → RT-DETOUR-04 归零",
+    "",
+    "GND 与 DET 都用 45° 转角，所以不会连带命中 TY-6.5.6-12。",
+    "",
+    "用法：python scripts/check.py examples/snapshot.redundancy.clean.json --min-severity WARN",
+    "期望：RT-* 0 条（FAIL 0）。"
+  ],
+  "board": {
+    "width_mil": 1000,
+    "height_mil": 900,
+    "copper_layers": 2,
+    "thickness_mm": 1.6,
+    "wave_solder": false,
+    "outline": [[0, 0], [1000, 0], [1000, 900], [0, 900]]
+  },
+  "components": [
+    {"designator": "J1", "layer": 1, "x": 200, "y": 450, "rotation": 0, "w": 100, "h": 200,
+     "footprint": "HDR-2X1", "pads": [
+       {"num": "1", "net": "VIN", "x": 200, "y": 400},
+       {"num": "2", "net": "GND", "x": 200, "y": 500}]},
+    {"designator": "U1", "layer": 1, "x": 560, "y": 450, "rotation": 0, "w": 100, "h": 200,
+     "footprint": "SOP-8", "pads": [
+       {"num": "1", "net": "VIN", "x": 560, "y": 400},
+       {"num": "2", "net": "GND", "x": 560, "y": 500}]},
+    {"designator": "R1", "layer": 1, "x": 780, "y": 400, "rotation": 0, "w": 40, "h": 20,
+     "footprint": "0603", "pads": [
+       {"num": "1", "net": "STUB", "x": 780, "y": 400}]},
+    {"designator": "J2", "layer": 1, "x": 100, "y": 780, "rotation": 0, "w": 100, "h": 100,
+     "footprint": "HDR-1X1", "pads": [
+       {"num": "1", "net": "DET", "x": 100, "y": 780}]},
+    {"designator": "U2", "layer": 1, "x": 900, "y": 780, "rotation": 0, "w": 100, "h": 100,
+     "footprint": "SOT-23", "pads": [
+       {"num": "1", "net": "DET", "x": 900, "y": 780}]}
+  ],
+  "traces": [
+    {"net": "VIN", "layer": 1, "x1": 200, "y1": 400, "x2": 560, "y2": 400, "width": 25},
+
+    {"net": "GND", "layer": 1, "x1": 200, "y1": 500, "x2": 200, "y2": 560, "width": 20},
+    {"net": "GND", "layer": 1, "x1": 200, "y1": 560, "x2": 300, "y2": 660, "width": 20},
+    {"net": "GND", "layer": 1, "x1": 300, "y1": 660, "x2": 460, "y2": 660, "width": 20},
+    {"net": "GND", "layer": 1, "x1": 460, "y1": 660, "x2": 560, "y2": 560, "width": 20},
+    {"net": "GND", "layer": 1, "x1": 560, "y1": 560, "x2": 560, "y2": 500, "width": 20},
+
+    {"net": "DET", "layer": 1, "x1": 100, "y1": 780, "x2": 900, "y2": 780, "width": 10}
+  ],
+  "vias": []
+}

@@ -19,7 +19,7 @@
 |---|---|---|
 | 输入 | 客户功能描述 | 网表 + 板框约束 |
 | 核心工具 | `schem.py`（spec/netlist/erc/bom/bind/playbook） | `plan.py` + `snap.py` + `check.py` |
-| 规则库 | 15 个功能块 + 5 颗芯片实例 + 23 条 ERC | 6 套企业规范 + 38 条 DRC/DFM/块级规则 |
+| 规则库 | 15 个功能块 + 5 颗芯片实例 + 23 条 ERC | 6 套企业规范 + 42 条 DRC/DFM/块级/冗余规则 |
 | 数值 | 上拉/限流/负载电容/偏置/电感/TVS 档位 | 载流线宽/电气间距/过孔/叠层/阻抗 |
 | 落笔 | `eda.sch_*` API | `easyeda` CLI + `eda.pcb_*` API |
 
@@ -50,7 +50,7 @@
         scripts/rules.py                   载流/间距/过孔/层数/阻抗
 执行层  scripts/plan.py                    布局坐标计划生成器
         scripts/snap.py                    EDA 回读三源合并成快照（缺走线数据直接报错）
-        scripts/check.py                   PCB 合规检查器（38 个规则号，四态含 UNKNOWN）
+        scripts/check.py                   PCB 合规检查器（42 个规则号，四态含 UNKNOWN）
         references/eda-execution.md        两套 API 的落笔顺序与坑
 ```
 
@@ -92,6 +92,8 @@ python scripts/schem.py erc examples/netlist.bad.json
 python scripts/rules.py width --current 3 --copper 1oz
 python scripts/snap.py --components examples/eda-export.components.json --lines examples/eda-export.lines.json --vias examples/eda-export.vias.json --width 1000 --height 800 -o s.json
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
+python scripts/check.py examples/snapshot.redundancy.json
+python scripts/check.py examples/snapshot.redundancy.clean.json
 ```
 
 期望输出：
@@ -105,7 +107,11 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 最小线宽：1.5mm (59.1mil)   该档载流：3.2A
 器件 2 / 走线 3（网络 2） / 过孔 1                     ← snap.py 三源合并；缺 --lines 会直接退出 2
 检查结果：FAIL 1 / WARN 14 / UNKNOWN 2 / INFO 1        ← demo 板：故意埋的 VDD×GND 短路
+检查结果：FAIL 2 / WARN 11 / UNKNOWN 2 / INFO 1        ← 冗余走线反例：RT-DUP-01、RT-STUB-02 各 1 个 FAIL
+检查结果：FAIL 0 / WARN 1  / UNKNOWN 2 / INFO 1        ← 同一块板清掉多余铜后，RT-* 全 0
 ```
+
+**冗余走线是唯一一类"电气上完全合法"的违规。** 重复段不短路、残段不开路、自环不违反间距，`drc-check` 和 `check` 全部放行——所以它们只能靠几何判据抓，也只能靠"改线时先删后画"防。四条判据的判据、阈值、豁免写法见 `references/routing-rules.md` §9。
 
 **后两条 ERC 是成对的自检设计**：好的必须干净、坏的必须报错。只测前者等于没测——检查器永远返回 0 违规也能"通过"。
 
@@ -168,7 +174,7 @@ python scripts/schem.py netlist spec.json --chip rs485=sp3485 --chip power_ldo=a
 
 ## PCB 部分
 
-### 38 个规则号，五组
+### 42 个规则号，六组
 
 | 组 | 规则 | 管什么 |
 |---|---|---|
@@ -177,6 +183,7 @@ python scripts/schem.py netlist spec.json --chip rs485=sp3485 --chip power_ldo=a
 | 布线 `TY-6.5.6-*` | 悬空线头、直角/锐角、3W、异网短路、线宽一致性、过孔孔厚比 | 走线合不合规 |
 | 图面整洁 `AEST-*` | 共线、阵列间距、0/90/180/270、0/45/90 角度栅格 | 齐不齐 |
 | 块级约束 `BLK-*` | 去耦贴 IC ≤2mm、保护器件贴连接器 ≤5mm（几何硬算）；其余约束汇总报 UNKNOWN | 芯片级要求落实了没 |
+| 冗余走线 `RT-*` | 共线重复段、残段、闭合铜环、绕行倍数（生成树铜长 ÷ 引脚曼哈顿 MST） | 有没有多出来的铜 |
 
 摆件顺序是硬约束（P0 机械锁定 → P1 功率热源 → P2 核心 IC → P3 就近器件 → P4 敏感小信号 → P5 其余阻容 → P6 测试点/MARK/丝印），前一档未锁定不得进入下一档。
 
@@ -192,7 +199,7 @@ jlc-pcb-layout-skill/
     ├── references/         原理图工作流/功能块/ERC 判据 + 6 份规范转写 + 执行手册
     ├── scripts/            schem.py / rules.py / plan.py / snap.py / check.py
     ├── assets/             constraints.json（数值唯一真源）+ circuit-blocks.json
-    └── examples/           需求样例、成品 spec/netlist、反面 netlist、6 个 PCB 快照、EDA 回读样本、两份走查
+    └── examples/           需求样例、成品 spec/netlist、反面 netlist、8 个 PCB 快照、EDA 回读样本、两份走查
 ```
 
 阈值全部集中在 `assets/constraints.json`（原理图部分在 `schematic` 节），觉得哪个太严太松直接改数字，不用改代码。功能块在 `assets/circuit-blocks.json`，加块的方法见 `references/circuit-blocks.md` 末节。

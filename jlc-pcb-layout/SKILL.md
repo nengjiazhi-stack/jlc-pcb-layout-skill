@@ -177,11 +177,25 @@ easyeda pcb report                         # 网络长度/差分偏斜
 
 **没有 `traces` 的快照不能用来判走线。** `components-list` 的输出里没有走线，早期写法从它里面取 `traces` 拿到的一直是空列表，于是 3W/直角/悬空/线宽四项全部静默跳过。`snap.py` 把这件事变成硬错误：缺 `--lines` 直接 exit 2，不生成"看起来正常"的空快照。确实还没布线才加 `--allow-empty`，此时 `check.py` 记 `FAB-DATA` UNKNOWN，`--gate` 判 `INCOMPLETE`。
 
-`check.py` 输出的每条违规都带**规则号**（如 `TY-6.5.6-12`、`AEST-ALIGN`、`EM-5.4.11`、`FAB-SHORT`），可回 `references/` 定位原文。严重度分三级：
+**冗余走线**（`RT-*`）。这一类 EDA 原生 `drc-check` / `check` 一条都查不出来：重复段不短路、残段不开路、自环不违反间距，电气上全是"合法"的，但都是画布上的多余铜：
+
+| 规则号 | 查什么 | 阈值（`assets/constraints.json` → `trace_redundancy`） | 默认 |
+|---|---|---|---|
+| `RT-DUP-01` | 同层同网两段共线且投影重叠 | 重叠 ≥ 较短段的 80%，两段都 ≥20mil | FAIL |
+| `RT-STUB-02` | 残段：从自由端走到第一个岔路口/焊盘的累计长度 | ≥ max(200mil, 10×线宽) | FAIL |
+| `RT-LOOP-03` | 同网络闭合铜环（TY-6.5.6-8） | 周长 ≥50mil | WARN |
+| `RT-DETOUR-04` | 生成树铜长 / 引脚曼哈顿最小生成树 | >1.8（高速网络 >1.3） | WARN |
+
+判据只认几何、不认意图。**故意留着的必须登记**，否则照报：测试点引线、天线焊盘、蛇形等长、差分补偿写进 `trace_redundancy.allow`，形如 `{"net":"TP_*","rules":["RT-STUB-02"],"max_len_mil":400,"reason":"测试点引线按设计保留"}`。登记生效后会以 `RT-ALLOW` INFO 列出来——豁免不是静默，"登记一次永久静音"也不成立（超过 `max_len_mil` 照样报）。
+
+数据不够时不编结论：整份快照没有焊盘坐标 → 残段判据不参与（缺数据由 `FAB-DATA` 报）；某个网络自己一个焊盘/过孔坐标都没有 → 该网络报 `RT-STUB-02` UNKNOWN。`examples/snapshot.redundancy.json` 是四条判据的活样例，`snapshot.redundancy.clean.json` 是同一块板清干净后（RT-* 全 0）的样子。
+
+`check.py` 输出的每条违规都带**规则号**（如 `TY-6.5.6-12`、`AEST-ALIGN`、`EM-5.4.11`、`FAB-SHORT`、`RT-DUP-01`），可回 `references/` 定位原文。严重度分四档：
 
 - `FAIL` — 违反硬约束（叠板、短路风险、工艺做不出来）→ 必须改；
 - `WARN` — 违反推荐值（间距偏小、去耦偏远）→ 改，或说明为什么能接受；
-- `INFO` — 数据不足无法判定（缺板框、缺高度、缺铜皮几何）→ 记录，不假装通过。
+- `UNKNOWN` — 这项**没查成**（缺 traces、缺高度、缺焊盘）→ 补数据重跑，不能算通过；
+- `INFO` — 已知事实或已声明例外（待选型、GPIO 未分配、allow 登记）→ 记录，不算违规。
 
 **图面整洁度检查**（`AEST-*`，判据见 `references/routing-aesthetics.md`）已能自动跑：
 
@@ -343,6 +357,8 @@ python scripts/snap.py --components examples/eda-export.components.json --lines 
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 python scripts/check.py examples/snapshot.decap.ok.json  --netlist examples/netlist.decap.json   # BLK-DECAP 应通过
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json   # 应报 BLK-DECAP FAIL
+python scripts/check.py examples/snapshot.redundancy.json        # 应报 RT-DUP-01 / RT-STUB-02 FAIL，RT-LOOP-03 / RT-DETOUR-04 WARN
+python scripts/check.py examples/snapshot.redundancy.clean.json  # 同一块板清掉多余铜后，RT-* 应 0 条
 python scripts/schem.py netlist examples/spec.example.json -o n.json --report   # 应报 76 器件 / 57 网络
 python scripts/schem.py netlist examples/spec.example.json --chip rs485=sp3485 --chip power_ldo=ams1117_33 -o n2.json
 python scripts/schem.py erc examples/netlist.example.json                            # 应报 FAIL 0 / WARN 0
@@ -350,7 +366,7 @@ python scripts/schem.py erc examples/netlist.bad.json                           
 python scripts/schem.py chips                                                        # 应见 5 颗，其中 1 颗不可套用
 ```
 
-十一条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
+十三条都要跑通。检查类的都是**成对自检**：正例必须干净、反例必须报错——只测前者等于没测。
 
 
 ## 红线
@@ -408,6 +424,8 @@ examples/
   snapshot.demo.fixed.json   回修后的同一块板（FAIL 0 / WARN 6 / UNKNOWN 2，UNKNOWN 明确表示"没查"）
   snapshot.aesthetics.json   整洁度反面样例（对齐/间距/朝向/角度各一条，另含不该报的交错双排）
   snapshot.placement.json    元器件摆放专项反面样例（FAIL 0 / WARN 10，PL-* 八类各中一条）
+  snapshot.redundancy.json   冗余走线反面样例（重复段/残段/自环/绕行各一条，四个 RT-* 全命中）
+  snapshot.redundancy.clean.json  同一块板清掉多余铜后（RT-* 全 0，验证不会滥报）
   eda-export.components.json 假的 components-list 输出（验证 snap.py 的器件/焊盘字段映射）
   eda-export.lines.json      假的 line-list 输出（3 段走线 / 2 个网络）
   eda-export.vias.json       假的 via-list 输出（1 个过孔）

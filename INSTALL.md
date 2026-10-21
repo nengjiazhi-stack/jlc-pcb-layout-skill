@@ -21,7 +21,7 @@
 | 计算层 | `jlc-pcb-layout/scripts/rules.py` | 载流线宽 / 电气间距 / 过孔 / 层数 / 阻抗 | 仅 Python 3.8+，纯标准库 |
 | 计划层 | `jlc-pcb-layout/scripts/plan.py` | 出摆件坐标计划 | 同上 |
 | 快照层 | `jlc-pcb-layout/scripts/snap.py` | EDA 回读三源（器件/走线/过孔）合并成检查器输入 | 同上 |
-| 检查层 | `jlc-pcb-layout/scripts/check.py` | 16 类规范符合性检查（含图面整洁度 `AEST-*`） | 同上 |
+| 检查层 | `jlc-pcb-layout/scripts/check.py` | 规范符合性检查：DRC/DFM + 摆放 `PL-*` + 整洁度 `AEST-*` + 冗余走线 `RT-*` | 同上 |
 | 落笔层 | 需另装 `easyeda` CLI | 把计划写进 EDA 画布 | 见「四、可选依赖」 |
 
 ---
@@ -72,9 +72,11 @@ python scripts/snap.py --components examples/eda-export.components.json --lines 
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json
+python scripts/check.py examples/snapshot.redundancy.json
+python scripts/check.py examples/snapshot.redundancy.clean.json
 ```
 
-期望输出（十条，顺序与上面一一对应）：
+期望输出（十二条，顺序与上面一一对应）：
 
 ```
 器件 76（其中待绑定 16/16），网络 57，功能块 11
@@ -132,8 +134,21 @@ snapshot 已写入 s.json
         C9 到 U4 间距 8.13mm > 2.0mm（紧贴 VCC 脚，供电环路短）
 ```
 
+```
+检查结果：FAIL 2 / WARN 11 / UNKNOWN 2 / INFO 1
+[FAIL   ] ✗ RT-DUP-01      net VIN layer 1
+[FAIL   ] ✗ RT-STUB-02     net STUB layer 1 @780,900
+[WARN   ] ! RT-LOOP-03     net GND layer 1 @560,600
+[WARN   ] ! RT-DETOUR-04   net DET
+```
+
+```
+检查结果：FAIL 0 / WARN 1 / UNKNOWN 2 / INFO 1
+```
+
 > **ERC 两条是成对设计**：成品网表必须干净，反面样例必须报 4 个 FAIL。只跑前者等于没测。
 > **BLK 那条是反例**：`snapshot.decap.bad.json` 故意把去耦放到 8mm 外，必须报 FAIL。配套的 `.ok.json` 是 1.8mm，应通过。
+> **最后两条是冗余走线的成对自检**：`snapshot.redundancy.json` 故意埋了重复段/残段/自环/绕行，四个 `RT-*` 必须全中；`snapshot.redundancy.clean.json` 是同一块板清干净后，`RT-*` 必须 0 条。只跑前者，检查器滥报也发现不了。
 
 `snapshot.demo.json` 的 **FAIL 1 是正常的**——它是故意埋了缺陷的示例板（VDD×GND 短路），用来演示检查器能抓到。修好的版本 `snapshot.demo.fixed.json` 跑出来是 `FAIL 0 / WARN 6 / UNKNOWN 2`。`netlist.bad.json` 的 4 个 FAIL 同理，是反面样例（LED 无限流、线圈无续流、TVS 选小、CC 缺下拉）。
 
@@ -216,6 +231,8 @@ jlc-pcb-layout/
     snapshot.demo.fixed.json  修好后的快照（FAIL 0 / WARN 6）
     snapshot.aesthetics.json  整洁度反面样例（AEST-ALIGN/PITCH/ROT/ANGLE 各一条）
     snapshot.placement.json   元器件摆放反面样例（PL-ORI/HEIGHT/AUTO-IND/MECH-CG/MAINT-CONN/FID）
+    snapshot.redundancy.json  冗余走线反面样例（RT-DUP-01/STUB-02/LOOP-03/DETOUR-04 各一条）
+    snapshot.redundancy.clean.json  同一块板清掉多余铜后（RT-* 全 0）
     eda-export.components.json 假的 components-list 输出（验证 snap.py 字段映射）
     eda-export.lines.json  假的 line-list 输出（3 段 / 2 网络）
     eda-export.vias.json   假的 via-list 输出（1 个过孔）
