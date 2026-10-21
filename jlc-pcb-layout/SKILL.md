@@ -404,7 +404,7 @@ scripts/
   rules.py                   计算与查表（线宽/间距/过孔/阻抗/层数）
   plan.py                    布局坐标计划生成器（输出 playbook / shell）
   snap.py                    EDA 回读三源合并成 check.py 的快照（缺走线数据就拒绝生成）
-  check.py                   规范符合性检查器（布局 16 类 + 走线 4 类 + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
+  check.py                   规范符合性检查器（布局 16 类 + 走线 8 类含 4 条 RT-* + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
   schem.py                   原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
 assets/
   constraints.json           全部数值约束（机器可读，唯一真源）
