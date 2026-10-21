@@ -12,6 +12,7 @@
     },
     "rule_id_convention": "TY-章节号 / EM-章节号 / BELL-页码或节 / ASUS-项次 / FAB-自定（工艺地板、短路、数据缺口）。走线条目写作 TY-6.5.6-<n>，n 为 routing-rules.md §5『走线二十条』的序号"
   },
+
   "jlc_fabrication": {
     "_source": "JLC",
     "_note": "打样/小批量能力，下单前请复核嘉立创官网；超出此范围必须走工艺评审",
@@ -21,380 +22,110 @@
     "min_hole_mil": 12,
     "min_annular_ring_mil": 6,
     "hole_to_board_ratio_max": 8,
-    "copper_thickness_oz_options": [
-      1,
-      2
-    ],
+    "copper_thickness_oz_options": [1, 2],
     "solder_mask_clearance_mil": 4,
     "silk_to_pad_clearance_mil": 6,
     "silk_min_height_mil": 32,
-    "board_thickness_mm": [
-      0.8,
-      1.0,
-      1.2,
-      1.6,
-      2.0
-    ],
-    "max_board_mm": [
-      500,
-      500
-    ],
+    "board_thickness_mm": [0.8, 1.0, 1.2, 1.6, 2.0],
+    "max_board_mm": [500, 500],
     "panel_gap_mil": 80
   },
+
   "current_capacity": {
     "_source": "HW-TY 6.3.1.2.2 表 + 注 i/ii",
     "_note": "Δt=10℃。第一/第二栏原表头均印 35um（誊录时有疑义），保守取用小值；铜皮作导线再降额 50%",
-    "width_mm": [
-      0.15,
-      0.2,
-      0.3,
-      0.4,
-      0.5,
-      0.6,
-      0.8,
-      1.0,
-      1.2,
-      1.5,
-      2.0,
-      2.5
-    ],
-    "current_a_35um_conservative": [
-      0.2,
-      0.55,
-      0.8,
-      1.1,
-      1.35,
-      1.6,
-      2.0,
-      2.3,
-      2.7,
-      3.2,
-      4.0,
-      4.5
-    ],
-    "current_a_35um_upper": [
-      0.5,
-      0.7,
-      1.1,
-      1.35,
-      1.7,
-      1.9,
-      2.4,
-      2.6,
-      3.0,
-      3.5,
-      4.3,
-      5.1
-    ],
-    "current_a_70um": [
-      0.7,
-      0.9,
-      1.3,
-      1.7,
-      2.0,
-      2.3,
-      2.8,
-      3.2,
-      3.6,
-      4.2,
-      5.1,
-      6.0
-    ],
+    "width_mm": [0.15, 0.20, 0.30, 0.40, 0.50, 0.60, 0.80, 1.00, 1.20, 1.50, 2.00, 2.50],
+    "current_a_35um_conservative": [0.20, 0.55, 0.80, 1.10, 1.35, 1.60, 2.00, 2.30, 2.70, 3.20, 4.00, 4.50],
+    "current_a_35um_upper": [0.50, 0.70, 1.10, 1.35, 1.70, 1.90, 2.40, 2.60, 3.00, 3.50, 4.30, 5.10],
+    "current_a_70um": [0.70, 0.90, 1.30, 1.70, 2.00, 2.30, 2.80, 3.20, 3.60, 4.20, 5.10, 6.00],
     "derate_ratio_pour_as_trace": 0.5,
-    "oz_to_um": {
-      "1": 35,
-      "2": 70
-    },
-    "ipc2221": {
-      "k_external": 0.048,
-      "k_internal": 0.024,
-      "delta_t_c_default": 10
-    }
+    "oz_to_um": {"1": 35, "2": 70},
+    "ipc2221": {"k_external": 0.048, "k_internal": 0.024, "delta_t_c_default": 10}
   },
+
   "electrical_clearance": {
     "_source": "HW-TY 6.3.1.2.3",
     "_note": "一次侧/二次侧分开用；空气间隙(gap)与爬电距离(creep)取对应电压档，超档按线性外推并标注保守",
     "primary_input_150_300v": [
-      {
-        "voltage": 50,
-        "gap_mm": 1.0,
-        "creep_mm": 1.2
-      },
-      {
-        "voltage": 150,
-        "gap_mm": 1.4,
-        "creep_mm": 1.6
-      },
-      {
-        "voltage": 200,
-        "gap_mm": null,
-        "creep_mm": 2.0
-      },
-      {
-        "voltage": 250,
-        "gap_mm": null,
-        "creep_mm": 2.5
-      },
-      {
-        "voltage": 300,
-        "gap_mm": 1.7,
-        "creep_mm": 3.2
-      },
-      {
-        "voltage": 400,
-        "gap_mm": null,
-        "creep_mm": 4.0
-      },
-      {
-        "voltage": 600,
-        "gap_mm": 3.0,
-        "creep_mm": 6.3
-      }
+      {"voltage": 50, "gap_mm": 1.0, "creep_mm": 1.2},
+      {"voltage": 150, "gap_mm": 1.4, "creep_mm": 1.6},
+      {"voltage": 200, "gap_mm": null, "creep_mm": 2.0},
+      {"voltage": 250, "gap_mm": null, "creep_mm": 2.5},
+      {"voltage": 300, "gap_mm": 1.7, "creep_mm": 3.2},
+      {"voltage": 400, "gap_mm": null, "creep_mm": 4.0},
+      {"voltage": 600, "gap_mm": 3.0, "creep_mm": 6.3}
     ],
     "primary_input_300_600v": [
-      {
-        "voltage": 50,
-        "gap_mm": null,
-        "creep_mm": 1.2
-      },
-      {
-        "voltage": 150,
-        "gap_mm": null,
-        "creep_mm": 1.6
-      },
-      {
-        "voltage": 200,
-        "gap_mm": 2.0,
-        "creep_mm": 2.0
-      },
-      {
-        "voltage": 250,
-        "gap_mm": 2.0,
-        "creep_mm": 2.5
-      },
-      {
-        "voltage": 300,
-        "gap_mm": 2.5,
-        "creep_mm": 3.2
-      },
-      {
-        "voltage": 400,
-        "gap_mm": 3.5,
-        "creep_mm": 4.0
-      },
-      {
-        "voltage": 600,
-        "gap_mm": 5.8,
-        "creep_mm": 6.3
-      }
+      {"voltage": 50, "gap_mm": null, "creep_mm": 1.2},
+      {"voltage": 150, "gap_mm": null, "creep_mm": 1.6},
+      {"voltage": 200, "gap_mm": 2.0, "creep_mm": 2.0},
+      {"voltage": 250, "gap_mm": 2.0, "creep_mm": 2.5},
+      {"voltage": 300, "gap_mm": 2.5, "creep_mm": 3.2},
+      {"voltage": 400, "gap_mm": 3.5, "creep_mm": 4.0},
+      {"voltage": 600, "gap_mm": 5.8, "creep_mm": 6.3}
     ],
     "secondary": [
-      {
-        "voltage": 71,
-        "gap_mm": 0.7,
-        "creep_mm": 1.2
-      },
-      {
-        "voltage": 125,
-        "gap_mm": 0.7,
-        "creep_mm": 1.5
-      },
-      {
-        "voltage": 150,
-        "gap_mm": 0.7,
-        "creep_mm": 1.6
-      },
-      {
-        "voltage": 200,
-        "gap_mm": 0.7,
-        "creep_mm": 2.0
-      },
-      {
-        "voltage": 250,
-        "gap_mm": 0.7,
-        "creep_mm": 2.5
-      }
+      {"voltage": 71, "gap_mm": 0.7, "creep_mm": 1.2},
+      {"voltage": 125, "gap_mm": 0.7, "creep_mm": 1.5},
+      {"voltage": 150, "gap_mm": 0.7, "creep_mm": 1.6},
+      {"voltage": 200, "gap_mm": 0.7, "creep_mm": 2.0},
+      {"voltage": 250, "gap_mm": 0.7, "creep_mm": 2.5}
     ],
     "secondary_300_600v_input": [
-      {
-        "voltage": 71,
-        "gap_mm": null,
-        "creep_mm": 1.2
-      },
-      {
-        "voltage": 125,
-        "gap_mm": null,
-        "creep_mm": 1.5
-      },
-      {
-        "voltage": 150,
-        "gap_mm": 1.7,
-        "creep_mm": 1.6
-      },
-      {
-        "voltage": 200,
-        "gap_mm": 1.7,
-        "creep_mm": 2.0
-      },
-      {
-        "voltage": 250,
-        "gap_mm": 1.7,
-        "creep_mm": 2.5
-      }
+      {"voltage": 71, "gap_mm": null, "creep_mm": 1.2},
+      {"voltage": 125, "gap_mm": null, "creep_mm": 1.5},
+      {"voltage": 150, "gap_mm": 1.7, "creep_mm": 1.6},
+      {"voltage": 200, "gap_mm": 1.7, "creep_mm": 2.0},
+      {"voltage": 250, "gap_mm": 1.7, "creep_mm": 2.5}
     ],
-    "line_to_protective_earth": {
-      "150_300v_table_mm": 4.0,
-      "300_600v_table_mm": 6.3
-    },
+    "line_to_protective_earth": {"150_300v_table_mm": 4.0, "300_600v_table_mm": 6.3},
     "exposed_busbar_between_different_voltage_mm": 2.0
   },
+
   "trace_width_tiers_bell": {
     "_source": "BELL-16/17/18",
     "_note": "四档走线宽度对应的线/焊盘/过孔间距与过孔焊盘尺寸；BGA 下方过孔需正反两面阻焊覆盖",
     "tiers": [
-      {
-        "trace_mm": 0.3,
-        "line_line_mm": 0.3,
-        "line_pad_mm": 0.3,
-        "line_via_mm": 0.3,
-        "pad_pad_mm": 0.3,
-        "pad_via_mm": 0.3,
-        "via_via_mm": 0.3,
-        "via_pad_inner_mm": 1.2,
-        "via_pad_outer_mm": 1.29,
-        "via_finished_hole_max_mm": 0.6
-      },
-      {
-        "trace_mm": 0.2,
-        "line_line_mm": 0.2,
-        "line_pad_mm": 0.2,
-        "line_via_mm": 0.2,
-        "pad_pad_mm": 0.2,
-        "pad_via_mm": 0.2,
-        "via_via_mm": 0.22,
-        "via_pad_inner_mm": 0.85,
-        "via_pad_outer_mm": 0.9,
-        "via_finished_hole_max_mm": 0.4
-      },
-      {
-        "trace_mm": 0.15,
-        "line_line_mm": 0.15,
-        "line_pad_mm": 0.15,
-        "line_via_mm": 0.15,
-        "pad_pad_mm": 0.2,
-        "pad_via_mm": 0.2,
-        "via_via_mm": 0.22,
-        "via_pad_inner_mm": 0.65,
-        "via_pad_outer_mm": 0.7,
-        "via_finished_hole_max_mm": 0.3
-      },
-      {
-        "trace_mm": 0.12,
-        "line_line_mm": 0.12,
-        "line_pad_mm": 0.12,
-        "line_via_mm": 0.12,
-        "pad_pad_mm": 0.2,
-        "pad_via_mm": 0.2,
-        "via_via_mm": 0.22,
-        "via_pad_inner_mm": 0.64,
-        "via_pad_outer_mm": 0.64,
-        "via_finished_hole_max_mm": 0.3
-      }
+      {"trace_mm": 0.30, "line_line_mm": 0.30, "line_pad_mm": 0.30, "line_via_mm": 0.30, "pad_pad_mm": 0.30, "pad_via_mm": 0.30, "via_via_mm": 0.30, "via_pad_inner_mm": 1.20, "via_pad_outer_mm": 1.29, "via_finished_hole_max_mm": 0.60},
+      {"trace_mm": 0.20, "line_line_mm": 0.20, "line_pad_mm": 0.20, "line_via_mm": 0.20, "pad_pad_mm": 0.20, "pad_via_mm": 0.20, "via_via_mm": 0.22, "via_pad_inner_mm": 0.85, "via_pad_outer_mm": 0.90, "via_finished_hole_max_mm": 0.40},
+      {"trace_mm": 0.15, "line_line_mm": 0.15, "line_pad_mm": 0.15, "line_via_mm": 0.15, "pad_pad_mm": 0.20, "pad_via_mm": 0.20, "via_via_mm": 0.22, "via_pad_inner_mm": 0.65, "via_pad_outer_mm": 0.70, "via_finished_hole_max_mm": 0.30},
+      {"trace_mm": 0.12, "line_line_mm": 0.12, "line_pad_mm": 0.12, "line_via_mm": 0.12, "pad_pad_mm": 0.20, "pad_via_mm": 0.20, "via_via_mm": 0.22, "via_pad_inner_mm": 0.64, "via_pad_outer_mm": 0.64, "via_finished_hole_max_mm": 0.30}
     ]
   },
+
   "vias": {
     "_source": "HW-TY 6.3.1.2.5.1 + EM-5.6.5 + EM-5.6.2/5.6.3",
     "preferred_series": [
-      {
-        "drill_mil": 24,
-        "pad_mil": 40,
-        "thermal_mil": 50
-      },
-      {
-        "drill_mil": 20,
-        "pad_mil": 35,
-        "thermal_mil": 45
-      },
-      {
-        "drill_mil": 16,
-        "pad_mil": 28,
-        "thermal_mil": 40
-      },
-      {
-        "drill_mil": 12,
-        "pad_mil": 25,
-        "thermal_mil": 35
-      },
-      {
-        "drill_mil": 8,
-        "pad_mil": 20,
-        "thermal_mil": 30
-      }
+      {"drill_mil": 24, "pad_mil": 40, "thermal_mil": 50},
+      {"drill_mil": 20, "pad_mil": 35, "thermal_mil": 45},
+      {"drill_mil": 16, "pad_mil": 28, "thermal_mil": 40},
+      {"drill_mil": 12, "pad_mil": 25, "thermal_mil": 35},
+      {"drill_mil": 8, "pad_mil": 20, "thermal_mil": 30}
     ],
     "em_standard_series": [
-      {
-        "drill_mil": 12,
-        "pad_mil": 25
-      },
-      {
-        "drill_mil": 16,
-        "pad_mil": 30
-      },
-      {
-        "drill_mil": 20,
-        "pad_mil": 35
-      },
-      {
-        "drill_mil": 24,
-        "pad_mil": 40
-      },
-      {
-        "drill_mil": 32,
-        "pad_mil": 50
-      }
+      {"drill_mil": 12, "pad_mil": 25},
+      {"drill_mil": 16, "pad_mil": 30},
+      {"drill_mil": 20, "pad_mil": 35},
+      {"drill_mil": 24, "pad_mil": 40},
+      {"drill_mil": 32, "pad_mil": 50}
     ],
     "board_thickness_to_min_drill_mil": [
-      {
-        "thickness_mm": 3.0,
-        "min_drill_mil": 24
-      },
-      {
-        "thickness_mm": 2.5,
-        "min_drill_mil": 20
-      },
-      {
-        "thickness_mm": 2.0,
-        "min_drill_mil": 16
-      },
-      {
-        "thickness_mm": 1.6,
-        "min_drill_mil": 12
-      },
-      {
-        "thickness_mm": 1.0,
-        "min_drill_mil": 8
-      }
+      {"thickness_mm": 3.0, "min_drill_mil": 24},
+      {"thickness_mm": 2.5, "min_drill_mil": 20},
+      {"thickness_mm": 2.0, "min_drill_mil": 16},
+      {"thickness_mm": 1.6, "min_drill_mil": 12},
+      {"thickness_mm": 1.0, "min_drill_mil": 8}
     ],
-    "hole_to_board_ratio_max": {
-      "ty": 8,
-      "em": 6
-    },
+    "hole_to_board_ratio_max": {"ty": 8, "em": 6},
     "bga_under_via_drill_mil": 12,
     "smt_pad_to_via_edge_mil": 10,
     "smt_pad_to_via_edge_masked_mil": 6,
     "test_via_pad_min_mil": 25,
     "test_via_pitch_min_mil": 50
   },
+
   "placement": {
-    "grid": {
-      "ic_mil": [
-        50,
-        100
-      ],
-      "small_smd_mil_min": 25,
-      "default_mil": 25,
-      "tht_mil": 50
-    },
+    "grid": {"ic_mil": [50, 100], "small_smd_mil_min": 25, "default_mil": 25, "tht_mil": 50},
     "edge_clearance": {
       "_source": "EM-5.4.12 / EM-5.5.1 / ASUS-2 / BELL-3",
       "device_to_track_edge_mm": 5.0,
@@ -452,9 +183,7 @@
       "load_cap_symmetry_mil": 50,
       "no_trace_underneath": true
     },
-    "series_termination": {
-      "to_driver_max_mil": 500
-    },
+    "series_termination": {"to_driver_max_mil": 500},
     "height": {
       "_source": "DFM 通用 / 贴片设备能力口径",
       "auto_place_max_mm": 25.0,
@@ -503,138 +232,55 @@
       "_source": "HW-TY 6.2.4 先大后小先难后易 / BELL-13 分区 / 本 skill 编排",
       "_note": "AI 摆件必须严格按 P0→P6 的顺序执行，前一档未锁定不得进入下一档",
       "steps": [
-        {
-          "rank": "P0",
-          "what": "机械锁定件：连接器 / 安装孔 / 定位孔 / 面板件 / 结构件",
-          "rule": "照结构图逐字写坐标并 lock；无图时贴边、开口朝板外、旋转只取 0/90/180/270"
-        },
-        {
-          "rank": "P1",
-          "what": "功率与热源：电源入口、变换器、功率器件、电感",
-          "rule": "靠输入边/出风口；热源分散不扎堆；功率流单向不折返"
-        },
-        {
-          "rank": "P2",
-          "what": "核心 IC 与高速/高频器件",
-          "rule": "靠近其服务的接口；模拟与数字分区，高频充分间隔"
-        },
-        {
-          "rank": "P3",
-          "what": "就近器件：去耦电容 / 串联匹配电阻 / 晶振+负载电容 / 反馈取样",
-          "rule": "去耦贴电源脚(2层≤150mil,4层≤250mil)；串阻≤500mil靠驱动端；晶振≤300mil"
-        },
-        {
-          "rank": "P4",
-          "what": "敏感小信号与模拟前端",
-          "rule": "与数字/功率区用地隔开，远离热源与电感"
-        },
-        {
-          "rank": "P5",
-          "what": "其余阻容与离散件",
-          "rule": "同类同封装朝向统一；阵列对齐；吸栅(IC 50-100mil / 小 SMD ≥25mil)"
-        },
-        {
-          "rank": "P6",
-          "what": "测试点 / MARK 基准点 / 丝印",
-          "rule": "MARK ≥3 个非对称；测试点焊盘≥24mil、中心距≥60mil"
-        }
+        {"rank": "P0", "what": "机械锁定件：连接器 / 安装孔 / 定位孔 / 面板件 / 结构件", "rule": "照结构图逐字写坐标并 lock；无图时贴边、开口朝板外、旋转只取 0/90/180/270"},
+        {"rank": "P1", "what": "功率与热源：电源入口、变换器、功率器件、电感", "rule": "靠输入边/出风口；热源分散不扎堆；功率流单向不折返"},
+        {"rank": "P2", "what": "核心 IC 与高速/高频器件", "rule": "靠近其服务的接口；模拟与数字分区，高频充分间隔"},
+        {"rank": "P3", "what": "就近器件：去耦电容 / 串联匹配电阻 / 晶振+负载电容 / 反馈取样", "rule": "去耦贴电源脚(2层≤150mil,4层≤250mil)；串阻≤500mil靠驱动端；晶振≤300mil"},
+        {"rank": "P4", "what": "敏感小信号与模拟前端", "rule": "与数字/功率区用地隔开，远离热源与电感"},
+        {"rank": "P5", "what": "其余阻容与离散件", "rule": "同类同封装朝向统一；阵列对齐；吸栅(IC 50-100mil / 小 SMD ≥25mil)"},
+        {"rank": "P6", "what": "测试点 / MARK 基准点 / 丝印", "rule": "MARK ≥3 个非对称；测试点焊盘≥24mil、中心距≥60mil"}
       ]
     }
   },
+
   "mounting_holes": {
     "_source": "EM-表5 / EM-表6 / BELL-7 / ASUS-15",
     "screw_keepout": [
-      {
-        "spec": "M2",
-        "hole_mm": 2.4,
-        "tol_mm": 0.1,
-        "keepout_mm": 7.1
-      },
-      {
-        "spec": "M2.5",
-        "hole_mm": 2.9,
-        "tol_mm": 0.1,
-        "keepout_mm": 7.6
-      },
-      {
-        "spec": "M3",
-        "hole_mm": 3.4,
-        "tol_mm": 0.1,
-        "keepout_mm": 8.6
-      },
-      {
-        "spec": "M4",
-        "hole_mm": 4.5,
-        "tol_mm": 0.1,
-        "keepout_mm": 10.6
-      },
-      {
-        "spec": "M5",
-        "hole_mm": 5.5,
-        "tol_mm": 0.1,
-        "keepout_mm": 12.0
-      }
+      {"spec": "M2", "hole_mm": 2.4, "tol_mm": 0.1, "keepout_mm": 7.1},
+      {"spec": "M2.5", "hole_mm": 2.9, "tol_mm": 0.1, "keepout_mm": 7.6},
+      {"spec": "M3", "hole_mm": 3.4, "tol_mm": 0.1, "keepout_mm": 8.6},
+      {"spec": "M4", "hole_mm": 4.5, "tol_mm": 0.1, "keepout_mm": 10.6},
+      {"spec": "M5", "hole_mm": 5.5, "tol_mm": 0.1, "keepout_mm": 12.0}
     ],
     "bell_location_hole": {
       "hole_diameter_mm": 3.0,
-      "solder_resist_window_mm": 3.5,
+      "solder_resist_window_mm": 3.50,
       "outer_layer_copper_prohibited_mm": 9.0,
-      "inner_layer_copper_prohibited_mm": 4.8,
+      "inner_layer_copper_prohibited_mm": 4.80,
       "center_to_board_edge_mm": 5.08,
       "to_tht_pad_mm": 7.62,
       "to_smd_body_mm": 5.08,
       "plated": false
     },
-    "asus_tooling_hole": {
-      "center_offset_mil": [
-        200,
-        200
-      ],
-      "finished_diameter_mil": 160
-    }
+    "asus_tooling_hole": {"center_offset_mil": [200, 200], "finished_diameter_mil": 160}
   },
+
   "fiducial": {
     "_source": "EM-5.7.2/5.7.3 / BELL-8",
-    "em": {
-      "pad_diameter_mil": 40,
-      "tol_mil": 1,
-      "mask_window_mil": 80,
-      "protect_ring_outer_mil": 110,
-      "protect_ring_inner_mil": 90,
-      "protect_ring_width_mil": 10,
-      "center_to_edge_min_mm": 5.0,
-      "count_min": 2,
-      "diagonal": true
-    },
-    "bell": {
-      "pad_diameter_mm": [
-        1.6,
-        1.0
-      ],
-      "solder_resist_mm": [
-        3.2,
-        2.2
-      ],
-      "copper_free_mm": [
-        3.4,
-        2.4
-      ],
-      "to_edge_or_hole_min_mm": 7.5
-    },
+    "em": {"pad_diameter_mil": 40, "tol_mil": 1, "mask_window_mil": 80, "protect_ring_outer_mil": 110, "protect_ring_inner_mil": 90, "protect_ring_width_mil": 10, "center_to_edge_min_mm": 5.0, "count_min": 2, "diagonal": true},
+    "bell": {"pad_diameter_mm": [1.60, 1.0], "solder_resist_mm": [3.20, 2.20], "copper_free_mm": [3.40, 2.40], "to_edge_or_hole_min_mm": 7.5},
     "dfm": {
       "_source": "通用 SMT 设备口径",
       "count_min": 3,
       "asymmetric": true,
       "pad_diameter_mm": 1.0,
-      "pad_diameter_range_mm": [
-        0.5,
-        2.0
-      ],
+      "pad_diameter_range_mm": [0.5, 2.0],
       "mask_window_multiple": 2,
       "clearance_to_other_features_mm": 3.0,
       "spread_min_ratio": 0.25
     }
   },
+
   "test_points": {
     "_source": "HW-TY 6.7.2 / EM-5.12 / BELL-24/25",
     "ict_pad_min_mil": 24,
@@ -642,148 +288,58 @@
     "ict_locator_hole_mil": 125,
     "probe_pitch_mm": 2.54,
     "bell_sizes_mm": [
-      {
-        "category": 1,
-        "free_copper_mm": 1.2,
-        "land_mm": 1.2,
-        "sr_window_mm": 1.4,
-        "hole_mm": 0.6
-      },
-      {
-        "category": 2,
-        "free_copper_mm": 1.0,
-        "land_mm": 1.0,
-        "sr_window_mm": 1.2,
-        "hole_mm": 0.4
-      },
-      {
-        "category": 2,
-        "free_copper_mm": 1.0,
-        "land_mm": 1.2,
-        "sr_window_mm": 1.2,
-        "hole_mm": 0.6
-      },
-      {
-        "category": 3,
-        "free_copper_mm": 0.8,
-        "land_mm": 0.8,
-        "sr_window_mm": 1.0,
-        "hole_mm": 0.3
-      }
+      {"category": 1, "free_copper_mm": 1.2, "land_mm": 1.2, "sr_window_mm": 1.4, "hole_mm": 0.6},
+      {"category": 2, "free_copper_mm": 1.0, "land_mm": 1.0, "sr_window_mm": 1.2, "hole_mm": 0.4},
+      {"category": 2, "free_copper_mm": 1.0, "land_mm": 1.2, "sr_window_mm": 1.2, "hole_mm": 0.6},
+      {"category": 3, "free_copper_mm": 0.8, "land_mm": 0.8, "sr_window_mm": 1.0, "hole_mm": 0.3}
     ],
     "test_point_to_board_edge_mil": 125,
-    "test_point_to_smd_pad_mm": {
-      "a": 1.0,
-      "b": 0.4
-    },
+    "test_point_to_smd_pad_mm": {"a": 1.0, "b": 0.40},
     "density_per_cm2_max": 5
   },
+
   "plane_and_stackup": {
     "_source": "HW-TY 6.3.1.1 / 6.3.1.2.5.3 / 6.5.6.19 / BELL-5/6 / EM-表7",
-    "split_width": {
-      "above_12v_mil": 50,
-      "below_12v_mil": [
-        20,
-        25
-      ]
-    },
-    "rule_3w": {
-      "center_spacing_x_width": 3,
-      "isolation": 0.7,
-      "10w_isolation": 0.98
-    },
-    "rule_20h": {
-      "h_inset": 20,
-      "isolation": 0.7,
-      "100h_isolation": 0.98
-    },
-    "multi_layer_trigger": {
-      "clock_mhz": 5,
-      "rise_time_ns": 5
-    },
+    "split_width": {"above_12v_mil": 50, "below_12v_mil": [20, 25]},
+    "rule_3w": {"center_spacing_x_width": 3, "isolation": 0.70, "10w_isolation": 0.98},
+    "rule_20h": {"h_inset": 20, "isolation": 0.70, "100h_isolation": 0.98},
+    "multi_layer_trigger": {"clock_mhz": 5, "rise_time_ns": 5},
     "adjacent_signal_layers_orthogonal": true,
     "power_gnd_adjacent": true,
     "symmetric_stackup": true,
     "inner_layer_between_primary_secondary_min_mm": 0.4,
     "pin_density_to_layers": [
-      {
-        "density_min": 1.0,
-        "signal_layers": 2,
-        "total_layers": 2
-      },
-      {
-        "density_min": 0.6,
-        "signal_layers": 2,
-        "total_layers": 4
-      },
-      {
-        "density_min": 0.4,
-        "signal_layers": 4,
-        "total_layers": 6
-      },
-      {
-        "density_min": 0.3,
-        "signal_layers": 6,
-        "total_layers": 8
-      },
-      {
-        "density_min": 0.2,
-        "signal_layers": 8,
-        "total_layers": 12
-      },
-      {
-        "density_min": 0.0,
-        "signal_layers": 10,
-        "total_layers": 14
-      }
+      {"density_min": 1.0, "signal_layers": 2, "total_layers": 2},
+      {"density_min": 0.6, "signal_layers": 2, "total_layers": 4},
+      {"density_min": 0.4, "signal_layers": 4, "total_layers": 6},
+      {"density_min": 0.3, "signal_layers": 6, "total_layers": 8},
+      {"density_min": 0.2, "signal_layers": 8, "total_layers": 12},
+      {"density_min": 0.0, "signal_layers": 10, "total_layers": 14}
     ],
     "pin_density_formula": "板面积(平方英寸) / (板上管脚总数 / 14)"
   },
+
   "assembly": {
     "_source": "ASUS-1/2/5/7/8~12 / EM-5.4.3/5.4.7/5.4.18",
     "reflow_pass_direction": "短边过炉，长边为夹持边",
     "wave_pass_direction": "I/O 口朝前，与 I/O 垂直的两边为夹持边",
-    "courtyard": {
-      "body_or_pad_margin_mil": 10,
-      "per_side_mil": 20,
-      "line_width_mil": 6,
-      "polarity_line_width_mil": 12,
-      "must_not_overlap": true
-    },
-    "vcut_to_chip_courtyard_mil": {
-      "parallel_above": 80,
-      "perpendicular_above": 200,
-      "parallel_side": 140,
-      "perpendicular_side": 180
-    },
+    "courtyard": {"body_or_pad_margin_mil": 10, "per_side_mil": 20, "line_width_mil": 6, "polarity_line_width_mil": 12, "must_not_overlap": true},
+    "vcut_to_chip_courtyard_mil": {"parallel_above": 80, "perpendicular_above": 200, "parallel_side": 140, "perpendicular_side": 180},
     "mousebite_to_protruding_part_mil": 40,
-    "bottom_side_weight_per_area_g_mm2": {
-      "chip": 0.075,
-      "gullwing": 0.3,
-      "j_lead": 0.2,
-      "area_array": 0.1
-    },
+    "bottom_side_weight_per_area_g_mm2": {"chip": 0.075, "gullwing": 0.300, "j_lead": 0.200, "area_array": 0.100},
     "wave_stand_off_max_mm": 0.15,
-    "wave_stand_off_copper_pad_range_mm": [
-      0.15,
-      0.2
-    ],
+    "wave_stand_off_copper_pad_range_mm": [0.15, 0.20],
     "wave_backside_test_point_gap_mm": 1.0,
     "tht_pad_gap_min_mm": 1.0,
     "tht_pitch_preferred_mm": 2.0,
-    "ths_pad_to_track_edge_mm": {
-      "transfer_side": 10,
-      "non_transfer_side": 5
-    },
-    "panelize_below_mm": [
-      50,
-      50
-    ],
+    "ths_pad_to_track_edge_mm": {"transfer_side": 10, "non_transfer_side": 5},
+    "panelize_below_mm": [50, 50],
     "vcut_board_thickness_max_mm": 3.5,
     "vcut_lines_parallel_to_conveyor_max": 3,
     "irregular_panel_rout_gap_min_mil": 80,
     "board_corner_radius_mm": 5
   },
+
   "silkscreen": {
     "_source": "EM-5.8 / ASUS-5/6",
     "direction": "从左至右、从下往上",
@@ -791,11 +347,9 @@
     "silk_on_pad_forbidden": true,
     "polarity_mark_visible": true,
     "designator_matches_bom": true,
-    "barcode_box_mil": [
-      42,
-      6
-    ]
+    "barcode_box_mil": [42, 6]
   },
+
   "aesthetics": {
     "_source": "references/routing-aesthetics.md / TY-6.2.4.4~6.2.5 / PC-5.7.x / ASUS-5",
     "_note": "『美观』不是判据，底层 5 个物理量才是：角度、对齐、间距一致性、线宽连续性、图元从属。本节只收能自动判的项；丝印与死铜因快照未采集图元而暂不判定。",
@@ -805,14 +359,7 @@
       "min_group_size": 3,
       "aligned_share_min": 0.6,
       "neighbor_gap_max_mult": 6,
-      "scope_prefixes": [
-        "R",
-        "C",
-        "L",
-        "D",
-        "Q",
-        "FB"
-      ]
+      "scope_prefixes": ["R", "C", "L", "D", "Q", "FB"]
     },
     "pitch": {
       "cv_warn": 0.25,
@@ -833,12 +380,7 @@
       "bga_area_to_pad_min_mil": 6,
       "high_freq_to_copper_min_mm": 0.5
     },
-    "priority": [
-      "electrical",
-      "assembly",
-      "manufacturability",
-      "neatness"
-    ],
+    "priority": ["electrical", "assembly", "manufacturability", "neatness"],
     "never_trade": [
       "为对齐把去耦电容从 IC 引脚旁拉走",
       "为 45° 强行绕线增加路径长度",
@@ -846,10 +388,12 @@
       "全板强制同宽同距"
     ]
   },
+
   "schematic": {
     "_source": "I2C-bus specification UM10204 / USB Type-C Cable and Connector Spec R2.0 / TIA-485-A / ISO 11898-2 / IEC 61131-2 输入电平 / 器件手册通用惯例（TI·ADI·ST 参考设计）+ 嘉立创商城在售器件参数区间",
     "_note": "原理图层的数值真源。能算的（限流/上拉/负载电容/偏置/电感）走 scripts/schem.py calc 算，算不出的查这里。本表没有的参数一律标『待选型确认』，禁止编数。",
     "rule_id_convention": "SCH-<语义>，如 SCH-PWR-DECOUPLE / SCH-ERC-SINGLE",
+
     "schematic_sheet": {
       "_note": "嘉立创EDA 专业版原理图坐标系：A4 图幅，原点左下角，y 向上",
       "unit": "10mil",
@@ -858,77 +402,39 @@
       "grid": 10,
       "min_pin_stub": 20
     },
+
     "net_naming": {
       "_note": "网络名会被网表、DRC、PCB 网络列表三处共用，命名错会导致 PCB 侧网络丢失或合并",
       "allowed_regex": "^[A-Za-z0-9_+\\-/.]{1,32}$",
-      "forbidden_names": [
-        "",
-        "NONE",
-        "NULL",
-        "NC",
-        "DNC",
-        "?",
-        "GND-",
-        "VCC-"
-      ],
-      "power_prefixes": [
-        "V",
-        "VCC",
-        "VDD",
-        "VBAT",
-        "VBUS",
-        "+"
-      ],
-      "ground_aliases": [
-        "GND",
-        "AGND",
-        "DGND",
-        "PGND",
-        "EARTH"
-      ],
+      "forbidden_names": ["", "NONE", "NULL", "NC", "DNC", "?", "GND-", "VCC-"],
+      "power_prefixes": ["V", "VCC", "VDD", "VBAT", "VBUS", "+"],
+      "ground_aliases": ["GND", "AGND", "DGND", "PGND", "EARTH"],
       "max_ground_kinds_warn": 2
     },
+
     "decoupling": {
       "_note": "每颗 IC 的每个电源脚一颗 100nF；每路电源一颗 bulk。电压额定 ≥ 2× 工作电压（X7R/X5R 直流偏压降容）",
-      "cap_per_power_pin_f": 1e-07,
-      "dielectric": [
-        "X7R",
-        "X5R"
-      ],
+      "cap_per_power_pin_f": 1e-7,
+      "dielectric": ["X7R", "X5R"],
       "voltage_derating": 2.0,
-      "bulk_per_rail_f": 1e-05,
+      "bulk_per_rail_f": 1e-5,
       "bulk_per_500ma": 1,
       "min_voltage_rating_v": 10
     },
+
     "i2c": {
       "_note": "Rmin 由 VOL/IOL 决定，Rmax 由上升时间 tr≈0.847·R·Cb 决定；两者取交集成候选区",
       "modes": {
-        "standard": {
-          "freq_hz": 100000,
-          "tr_max_ns": 1000
-        },
-        "fast": {
-          "freq_hz": 400000,
-          "tr_max_ns": 300
-        },
-        "fast_plus": {
-          "freq_hz": 1000000,
-          "tr_max_ns": 120
-        }
+        "standard": {"freq_hz": 100000, "tr_max_ns": 1000},
+        "fast": {"freq_hz": 400000, "tr_max_ns": 300},
+        "fast_plus": {"freq_hz": 1000000, "tr_max_ns": 120}
       },
       "vol_v": 0.4,
       "iol_a": 0.003,
       "cb_default_pf": 200,
-      "preferred_series_ohm": [
-        1000,
-        1500,
-        1800,
-        2200,
-        3300,
-        4700,
-        10000
-      ]
+      "preferred_series_ohm": [1000, 1500, 1800, 2200, 3300, 4700, 10000]
     },
+
     "crystal": {
       "_note": "负载电容 C1=C2=2×(CL−Cstray)。Cstray 含 PCB 走线与引脚电容，2 层取 3pF、4 层及以上取 4~5pF",
       "cstray_pf_2layer": 3,
@@ -937,20 +443,15 @@
       "series_r_ohm_32k": 0,
       "drive_level_warn_uw": 200
     },
+
     "led": {
       "_note": "R=(Vcc−Vf)/I。Vf 随颜色/工艺变化，取 datasheet 典型值；指示灯电流 1~10mA 足够",
-      "vf_table_v": {
-        "red": 1.9,
-        "green": 2.1,
-        "yellow": 2.1,
-        "blue": 3.0,
-        "white": 3.0,
-        "ir": 1.2
-      },
+      "vf_table_v": {"red": 1.9, "green": 2.1, "yellow": 2.1, "blue": 3.0, "white": 3.0, "ir": 1.2},
       "i_default_ma": 5,
       "i_min_ma": 0.5,
       "power_check_mw": 100
     },
+
     "ldo": {
       "_note": "Pd=(Vin−Vout)×Iout+Vin×Iq；结温 Tj=Pd×θja+Ta，θja 按封装查 datasheet，未查到时按 100℃/W 保守估",
       "theta_ja_default_c_per_w": 100,
@@ -958,9 +459,10 @@
       "tj_max_c": 125,
       "pd_warn_w": 0.5,
       "dropout_v_default": 1.1,
-      "cin_min_f": 1e-06,
-      "cout_min_f": 1e-06
+      "cin_min_f": 1e-6,
+      "cout_min_f": 1e-6
     },
+
     "usb_c": {
       "_note": "UFP（受电设备）CC1/CC2 各接 5.1kΩ±5% 下拉到 GND，缺一颗就无法被 source 识别。D+/D− 建议串 0~22Ω 并就近加 ESD",
       "rd_ohm": 5100,
@@ -970,20 +472,16 @@
       "vbus_min_v": 4.75,
       "vbus_max_v": 5.5
     },
+
     "rs485": {
       "_note": "TIA-485-A：两端各 120Ω 终端；空闲失效保护由偏置电阻提供，Vab_idle ≥ 200mV",
       "rt_ohm": 120,
       "vab_idle_min_v": 0.2,
-      "bias_ohm_range": [
-        560,
-        1000
-      ],
+      "bias_ohm_range": [560, 1000],
       "tvs_required": true,
-      "common_mode_range_v": [
-        -7,
-        12
-      ]
+      "common_mode_range_v": [-7, 12]
     },
+
     "can": {
       "_note": "ISO 11898-2：总线两端各 120Ω；分裂终端时两半各 60Ω 中间经 4.7nF 落地",
       "rt_ohm": 120,
@@ -991,6 +489,7 @@
       "split_cap_nf": 4.7,
       "terminator_count_expected": 2
     },
+
     "relay": {
       "_note": "三极管/MOS 驱动：Ic/Io 余量 ≥3×，基极电阻按 β_min 与饱和倍数算；线圈必须反并联续流二极管",
       "ic_margin": 3,
@@ -999,25 +498,29 @@
       "diode_vr_mult": 2.0,
       "diode_if_mult": 1.5
     },
+
     "adc": {
       "_note": "SAR ADC 前级源阻抗 ≤10kΩ，采样保持误差才可控；分压后并 100nF 做电荷缓冲",
       "max_source_ohm": 10000,
       "filter_cap_nf": 100,
       "min_divider_current_ua": 10
     },
+
     "tvs": {
       "_note": "VRWM ≥ 1.1×工作电压（否则正常工作就漏电击穿），钳位电压 VC 必须低于被保护脚绝对最大额定值",
       "vrwm_mult": 1.1,
       "clamp_margin": 0.9
     },
+
     "mcu": {
       "_note": "最小系统四件套：复位（10k 上拉 + 100nF 对地）、时钟（晶振+负载电容）、去耦（每电源脚 100nF）、下载口。缺任何一项 ERC 报 WARN",
       "reset_r_ohm": 10000,
-      "reset_c_f": 1e-07,
+      "reset_c_f": 1e-7,
       "swd_pullup_ohm": 10000,
       "boot_pull_ohm": 10000,
-      "decouple_f": 1e-07
+      "decouple_f": 1e-7
     },
+
     "erc_severity": {
       "SCH-ERC-SINGLE": "WARN",
       "SCH-ERC-NODRIVER": "WARN",
@@ -1050,78 +553,21 @@
       "decap": {
         "min_nf": 10.0,
         "max_uf": 1.0,
-        "note": "去耦判定：IC 每个电源脚所在网络上，必须存在一颗 10nF~1uF 的电容（典型 100nF）。"
+        "note": "去耦判定：IC 每个电源脚所在网络上，必须存在一颗 10nF~1uF 的电容（典型 100nF），且另一端接地。"
       },
       "supply": {
-        "p0": {
-          "library": [
-            "basic"
-          ],
-          "min_stock": 500,
-          "label": "首选：基础库 + 库存≥500 + 有销量"
-        },
-        "p1": {
-          "library": [
-            "preferred"
-          ],
-          "min_stock": 100,
-          "label": "可用：优选库 + 库存≥100 + 有销量"
-        },
-        "p2": {
-          "min_stock": 50,
-          "label": "备选：库存≥50 的非基础/非优选"
-        },
-        "p3": {
-          "min_stock": 0,
-          "label": "慎用：库存<50 或无销量，必须备注替代"
-        },
+        "p0": {"library": ["basic"], "min_stock": 500, "label": "首选：基础库 + 库存≥500 + 有销量"},
+        "p1": {"library": ["preferred"], "min_stock": 100, "label": "可用：优选库 + 库存≥100 + 有销量"},
+        "p2": {"min_stock": 50, "label": "备选：库存≥50 的非基础/非优选"},
+        "p3": {"min_stock": 0, "label": "慎用：库存<50 或无销量，必须备注替代"},
         "note": "stock 为 null 时一律 UNKNOWN，不得算作任何一档。库存 0 直接 FAIL。"
       },
       "xpin": {
-        "pins": [
-          "SETC",
-          "VREG",
-          "VREGOUT",
-          "REGC",
-          "VCAP",
-          "VCP",
-          "VC",
-          "CP1",
-          "CP2",
-          "CP",
-          "BOOT",
-          "BST",
-          "SS",
-          "COMP",
-          "TS",
-          "TEMP",
-          "FILT"
-        ],
+        "pins": ["SETC", "VREG", "VREGOUT", "REGC", "VCAP", "VCP", "VC", "CP1", "CP2", "CP", "BOOT", "BST", "SS", "COMP", "TS", "TEMP", "FILT"],
         "note": "跨引脚电容：这些脚不在 VCC 上，最易在『以芯片为中心』的设计里漏掉。缺电容 → 芯片不工作或复位异常，故判 FAIL。"
       },
-      "decap_pins": [
-        "VCC",
-        "VDD",
-        "VDDIO",
-        "VLOGIC",
-        "AVDD",
-        "DVDD",
-        "VBUS",
-        "VIN"
-      ],
-      "ng_pins": [
-        "EN",
-        "NRST",
-        "RESET",
-        "NCS",
-        "CS",
-        "SHDN",
-        "XSHUT",
-        "BOOT0",
-        "IO0",
-        "STBY",
-        "FAULT"
-      ],
+      "decap_pins": ["VCC", "VDD", "VDDIO", "VLOGIC", "AVDD", "DVDD", "VBUS", "VIN"],
+      "ng_pins": ["EN", "NRST", "RESET", "NCS", "CS", "SHDN", "XSHUT", "BOOT0", "IO0", "STBY", "FAULT"],
       "audit_severity": {
         "SCH-BOM-DECAP": "FAIL",
         "SCH-BOM-XPIN": "FAIL",
