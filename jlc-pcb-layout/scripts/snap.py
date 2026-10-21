@@ -202,8 +202,15 @@ def norm_lines(raw):
             width = float(width)
         except (TypeError, ValueError):
             raise SystemExit(f"{where} 的线宽不是数字：{width!r}")
-        out.append({"net": str(net), "layer": int(_pick(t, "layer", "layerId", default=1)),
-                    "x1": x1, "y1": y1, "x2": x2, "y2": y2, "width": width})
+        rec = {"net": str(net), "layer": int(_pick(t, "layer", "layerId", default=1)),
+               "x1": x1, "y1": y1, "x2": x2, "y2": y2, "width": width}
+        # primitiveId 有就带上：journal.py 靠它做过程对账，check.py 报几何违规时
+        # 也能直接指到某一段。没有不算错（不是每份导出都带），所以不报缺字段。
+        sid = _pick(t, "id", "primitiveId", "lineId", "uuid", "gid", "primitive_id",
+                    "ID", "Id", "primitiveID")
+        if sid is not None and sid != "":
+            rec["id"] = str(sid).strip()
+        out.append(rec)
     if bad:
         raise SystemExit("走线映射失败：\n  " + "\n  ".join(bad[:10]))
     return out, no_width

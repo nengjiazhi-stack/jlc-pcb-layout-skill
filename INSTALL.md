@@ -74,9 +74,11 @@ python scripts/check.py examples/snapshot.aesthetics.json --min-severity WARN
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json
 python scripts/check.py examples/snapshot.redundancy.json
 python scripts/check.py examples/snapshot.redundancy.clean.json
+python scripts/journal.py verify --journal examples/journal.rounds.forgot.json --final examples/eda-export.lines.after.json
+python scripts/journal.py verify --journal examples/journal.rounds.json --final examples/eda-export.lines.overlap.json
 ```
 
-期望输出（十二条，顺序与上面一一对应）：
+期望输出（十四条，顺序与上面一一对应）：
 
 ```
 器件 76（其中待绑定 16/16），网络 57，功能块 11
@@ -146,8 +148,20 @@ snapshot 已写入 s.json
 检查结果：FAIL 0 / WARN 1 / UNKNOWN 2 / INFO 1
 ```
 
+```
+过程对账：FAIL 0 / WARN 3 / UNKNOWN 0 / INFO 0
+[WARN   ] ! RT-JRN-06      net VDD id 301
+```
+
+```
+过程对账：FAIL 1 / WARN 0 / UNKNOWN 0 / INFO 0
+[FAIL   ] ✗ RT-JRN-05      net VDD id 101
+```
+
 > **ERC 两条是成对设计**：成品网表必须干净，反面样例必须报 4 个 FAIL。只跑前者等于没测。
 > **BLK 那条是反例**：`snapshot.decap.bad.json` 故意把去耦放到 8mm 外，必须报 FAIL。配套的 `.ok.json` 是 1.8mm，应通过。
+> **对账两条也是成对设计**：`journal.rounds.forgot.json` 记了删、忘了记加，必须报 `RT-JRN-06` WARN；`journal.rounds.json` 配 `eda-export.lines.overlap.json`（声明删了 101 但画布上还在）必须报 `RT-JRN-05` FAIL。配 `eda-export.lines.split.json` 时切段应被豁免、只出 INFO —— 拿段数去比就会在这里误报。
+>
 > **最后两条是冗余走线的成对自检**：`snapshot.redundancy.json` 故意埋了重复段/残段/自环/绕行，四个 `RT-*` 必须全中；`snapshot.redundancy.clean.json` 是同一块板清干净后，`RT-*` 必须 0 条。只跑前者，检查器滥报也发现不了。
 
 `snapshot.demo.json` 的 **FAIL 1 是正常的**——它是故意埋了缺陷的示例板（VDD×GND 短路），用来演示检查器能抓到。修好的版本 `snapshot.demo.fixed.json` 跑出来是 `FAIL 0 / WARN 6 / UNKNOWN 2`。`netlist.bad.json` 的 4 个 FAIL 同理，是反面样例（LED 无限流、线圈无续流、TVS 选小、CC 缺下拉）。
@@ -215,8 +229,9 @@ jlc-pcb-layout/
     schem.py               原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
     rules.py               六个计算子命令
     plan.py                布局坐标计划生成器
-    snap.py                EDA 回读三源合并成快照（缺走线数据拒绝生成，exit 2）
-    check.py               规范符合性检查器（四态含 UNKNOWN；--gate 单一判定；--netlist 并入 ERC 与块级约束）
+    snap.py                EDA 回读三源合并成快照（缺走线数据拒绝生成，exit 2；有 id 就带上）
+    journal.py             布线账本：按 primitiveId 记增删，收尾对账（抓叠画/未记账）
+    check.py               规范符合性检查器（四态含 UNKNOWN；--gate 单一判定；--netlist 并入 ERC 与块级约束；--journal 并入过程对账）
   examples/
     walkthrough.md         60×45 四层板完整走查（含真实输出）
     walkthrough-schematic.md  从客户一句话到可投板原理图的走查（含真实输出）
@@ -234,6 +249,13 @@ jlc-pcb-layout/
     snapshot.redundancy.json  冗余走线反面样例（RT-DUP-01/STUB-02/LOOP-03/DETOUR-04 各一条）
     snapshot.redundancy.clean.json  同一块板清掉多余铜后（RT-* 全 0）
     eda-export.components.json 假的 components-list 输出（验证 snap.py 字段映射）
+    eda-export.lines.json  假的 line-list 输出（带 primitiveId）
+    eda-export.lines.after.json   改线后的正确结果（101 已删、301→303 绕行）
+    eda-export.lines.overlap.json 反面：声明删了 101 但它还在 —— 叠画
+    eda-export.lines.split.json   同一根线在交点被原生切成 401/402（验证切段豁免）
+    journal.baseline.json  布线前基线（per-net primitiveId + 几何）
+    journal.rounds.json    记账正确的账本
+    journal.rounds.forgot.json 反面：只记了删、忘了记加
     eda-export.lines.json  假的 line-list 输出（3 段 / 2 网络）
     eda-export.vias.json   假的 via-list 输出（1 个过孔）
 ```

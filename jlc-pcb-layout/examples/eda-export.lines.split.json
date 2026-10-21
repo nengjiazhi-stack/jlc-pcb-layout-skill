@@ -1,0 +1,9 @@
+{
+  "_note": "切段夹具：同一根线在 x=330 被原生切成 401/402 两段，旧 id 101 消失。账本一笔没记 —— 这不该报，切段不是新增铜。用来验证「按 id 比、不按段数比」。",
+  "lines": [
+    {"id": "401", "net": "VDD", "layer": 1, "startX": 250, "startY": 400, "endX": 330, "endY": 400, "lineWidth": 20},
+    {"id": "402", "net": "VDD", "layer": 1, "startX": 330, "startY": 400, "endX": 410, "endY": 400, "lineWidth": 20},
+    {"id": "102", "net": "VDD", "layer": 1, "startX": 410, "startY": 400, "endX": 570, "endY": 400, "lineWidth": 20},
+    {"id": "201", "net": "GND", "layer": 1, "startX": 350, "startY": 320, "endX": 630, "endY": 320, "lineWidth": 20}
+  ]
+}

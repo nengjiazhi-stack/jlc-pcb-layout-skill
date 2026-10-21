@@ -1,0 +1,10 @@
+{
+  "_note": "布线后的导出：VDD 的 101 已按账本删掉，改走上方绕行 301→302→303。对账应判「账平」。",
+  "lines": [
+    {"id": "102", "net": "VDD", "layer": 1, "startX": 410, "startY": 400, "endX": 570, "endY": 400, "lineWidth": 20},
+    {"id": "301", "net": "VDD", "layer": 1, "startX": 250, "startY": 400, "endX": 250, "endY": 350, "lineWidth": 20},
+    {"id": "302", "net": "VDD", "layer": 1, "startX": 250, "startY": 350, "endX": 410, "endY": 350, "lineWidth": 20},
+    {"id": "303", "net": "VDD", "layer": 1, "startX": 410, "startY": 350, "endX": 410, "endY": 400, "lineWidth": 20},
+    {"id": "201", "net": "GND", "layer": 1, "startX": 350, "startY": 320, "endX": 630, "endY": 320, "lineWidth": 20}
+  ]
+}

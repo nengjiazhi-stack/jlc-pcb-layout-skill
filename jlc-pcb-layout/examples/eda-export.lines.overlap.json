@@ -1,0 +1,11 @@
+{
+  "_note": "反面夹具：账本声明删 101，但 101 还在画布上，同时 301→302→303 也画了 —— 典型的「改线时不删旧段，在上面叠着画」。对账应判 RT-JRN-05 FAIL。",
+  "lines": [
+    {"id": "101", "net": "VDD", "layer": 1, "startX": 250, "startY": 400, "endX": 410, "endY": 400, "lineWidth": 20},
+    {"id": "102", "net": "VDD", "layer": 1, "startX": 410, "startY": 400, "endX": 570, "endY": 400, "lineWidth": 20},
+    {"id": "301", "net": "VDD", "layer": 1, "startX": 250, "startY": 400, "endX": 250, "endY": 350, "lineWidth": 20},
+    {"id": "302", "net": "VDD", "layer": 1, "startX": 250, "startY": 350, "endX": 410, "endY": 350, "lineWidth": 20},
+    {"id": "303", "net": "VDD", "layer": 1, "startX": 410, "startY": 350, "endX": 410, "endY": 400, "lineWidth": 20},
+    {"id": "201", "net": "GND", "layer": 1, "startX": 350, "startY": 320, "endX": 630, "endY": 320, "lineWidth": 20}
+  ]
+}

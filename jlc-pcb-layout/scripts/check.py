@@ -40,6 +40,8 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # 同级 scripts/ 里的 journal.py
+
 MIL_PER_MM = 39.37007874015748
 
 GND_RE = re.compile(r"^(A?GND|DGND|PGND|GNDA|GNDD|VSS|PE|EGND|0V)$", re.I)
@@ -884,6 +886,63 @@ def check_redundancy(con, rep, traces, vias, comps) -> list:
     return escalated
 
 
+def _journal_final(snap: dict) -> dict:
+    """把快照里的走线整理成 journal.reconcile 要的 {net: {id: [x1,y1,x2,y2,layer]}}。"""
+    out = {}
+    for t in snap.get("traces") or []:
+        sid = t.get("id")
+        if not sid:
+            continue
+        out.setdefault(str(t.get("net", "")), {})[str(sid)] = [
+            float(t["x1"]), float(t["y1"]), float(t["x2"]), float(t["y2"]),
+            int(t.get("layer", 1))]
+    return out
+
+
+def check_journal(path, snap, con, rep):
+    """RT-JRN-05 / RT-JRN-06：用布线账本核对"旧段删没删、增删有没有记账"。
+
+    几何判据（RT-DUP 等）只看铜，看不出"改线时没删旧段"；账本按 primitiveId
+    比，专治这个。两者都要过：账平不代表几何合规，几何干净也不代表过程干净。
+    """
+    try:
+        import journal
+    except ImportError:   # 单文件拷贝走丢了 journal.py
+        rep.unknown("RT-JRN-05", "全板",
+                    "找不到 scripts/journal.py，过程对账未跑",
+                    "把 journal.py 与 check.py 放在同一目录")
+        return
+
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SystemExit(f"找不到 journal：{path}")
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"{path} 不是合法 JSON：{e}")
+
+    if not (doc.get("rounds") or []):
+        rep.unknown("RT-JRN-05", "全板",
+                    f"{Path(path).name} 只记了基线、没有 rounds：没有操作记录，"
+                    f"分不清哪些铜是本流程画的",
+                    "布线时每步 journal.py record 记一笔；只记基线不算记账")
+        return
+
+    final = _journal_final(snap)
+    if not final:
+        rep.unknown("RT-JRN-05", "全板",
+                    "快照里的走线没有 primitiveId，无法与账本核对",
+                    "确认 line-list 导出带 id 字段，再用 snap.py 重新生成快照")
+        return
+
+    cfg = _red_cfg(con)
+    sev = cfg.get("severity") or {}
+    items, stats = journal.reconcile(
+        doc, final, float(cfg.get("journal_cover_ratio", 0.90)),
+        sev.get("RT-JRN-05", "FAIL"), sev.get("RT-JRN-06", "WARN"))
+    for i in items:
+        rep.add(i["severity"], i["rule"], i["where"], i["issue"], i["fix"])
+
+
 def check_traces(snap, con, rep, traces, vias, comps):
     """走线层检查：悬空端、直角/锐角、3W、同网络线宽一致、异网短路、冗余走线。"""
     tol = 8.0            # 线段接头重合容差
@@ -1331,6 +1390,8 @@ def main(argv=None) -> int:
     ap.add_argument("--require-known", action="store_true",
                     help="有 UNKNOWN 时返回 2：检查没跑全不算通过")
     ap.add_argument("--netlist", help="网表 JSON：并入 ERC 与块级布局约束检查")
+    ap.add_argument("--journal",
+                    help="布线账本 JSON（journal.py baseline 生成）：并入过程对账 RT-JRN-05/06")
     ap.add_argument("--gate", action="store_true", help="输出单一门禁判定（BLOCKED/INCOMPLETE/REVIEW/PASS）")
     args = ap.parse_args(argv)
 
@@ -1342,6 +1403,9 @@ def main(argv=None) -> int:
     if args.netlist:
         nl = json.loads(Path(args.netlist).read_text(encoding="utf-8"))
         check_block_constraints(snap, nl, rep)
+
+    if args.journal:
+        check_journal(args.journal, snap, con, rep)
 
     keep = [i for i in rep.items if SEV_ORDER[i["severity"]] <= SEV_ORDER[args.min_severity]]
     keep.sort(key=lambda i: (SEV_ORDER[i["severity"]], i["rule"]))

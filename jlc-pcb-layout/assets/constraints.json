@@ -331,12 +331,16 @@
     "loop_min_perimeter_mil": 50.0,
     "detour_ratio": 1.8,
     "detour_ratio_high_speed": 1.3,
+    "_journal_note": "RT-JRN-* 是过程对账（journal.py），比 primitiveId 不比段数：原生会在交点自动切段。journal_cover_ratio 是切段豁免阈值 —— 消失的 id 若仍被最终铜覆盖到这个比例，判切段而非丢失。",
+    "journal_cover_ratio": 0.9,
     "high_speed_patterns": ["*_DP", "*_DN", "DP*", "DN*", "*CLK*", "*SCK*", "*SDIO*", "*USB*", "*HDMI*", "MIPI*", "*LVDS*", "RF_*"],
     "severity": {
       "RT-DUP-01": "FAIL",
       "RT-STUB-02": "FAIL",
       "RT-LOOP-03": "WARN",
-      "RT-DETOUR-04": "WARN"
+      "RT-DETOUR-04": "WARN",
+      "RT-JRN-05": "FAIL",
+      "RT-JRN-06": "WARN"
     },
     "allow": []
   },

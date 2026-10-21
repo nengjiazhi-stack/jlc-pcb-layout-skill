@@ -267,6 +267,66 @@ EM 标准过孔（内径/外径）：12/25、16/30、20/35、24/40、32/50 mil�
 
 **UNKNOWN 不是通过。** 看到它就补数据重跑。
 
+### 9.5 过程对账：按 primitiveId 记账（`RT-JRN-*`）
+
+9.2 的四条判据只看铜，有三种"多余"它抓不到：
+
+| 形态 | 几何判据为什么不报 |
+|---|---|
+| 新线只盖住旧线的一小截（重叠 30%） | `RT-DUP-01` 要 80% 才报 |
+| 旧段端点被推了一点，两段刚好错开一个线宽 | 垂距超 1.5mil，判不了共线 |
+| 改了网络名，新线落在**别的网络**的旧线位置 | 报了也是 `FAB-SHORT`，等烧板才发现 |
+
+三者同一个动作特征：**该删的旧段没删**。几何看不出动作，日志看得出。
+
+**记账三件套**
+
+```bash
+# 1) 布线前记基线（per-net primitiveId + 几何）
+easyeda pcb line-list --json > lines.pre.json
+python scripts/journal.py baseline --lines lines.pre.json -o journal.json
+
+# 2) 每画/删一段记一笔（id 取 line.create / line.delete 的返回值）
+python scripts/journal.py record --journal journal.json --net VDD --delete 101 --add 301,302
+
+# 3) 收尾对账（并进 check.py）
+easyeda pcb line-list --json > lines.post.json
+python scripts/journal.py verify --journal journal.json --final lines.post.json
+python scripts/check.py snapshot.json --journal journal.json
+```
+
+**两条判据**
+
+| 规则号 | 判据 | 默认级别 | 说明 |
+|---|---|---|---|
+| `RT-JRN-05` | 账本声明删掉的 id 在最终导出里还在 | FAIL | 旧段没删就画了新的 —— 叠画的唯一硬证据 |
+| `RT-JRN-06` | 某网络的 id 集合变了，但没有对应的记账 | WARN | 删的没登记 / 加的没登记 |
+
+**为什么必须按 id 比，不能按段数比**
+
+EDA 会在交点处把线切开：调 200 次 `line.create` 可能得到 202 段；一段声明新增的线也可能被切成两个 id。所以：
+
+- 段数 ≠ 操作数，用段数核对**必然误报**；
+- primitiveId 是稳定的：声明删的 id 还在，就是没删；声明加的 id 变成两个，是切段。
+
+**切段自动豁免**（`journal_cover_ratio`，默认 0.9）。消失的 id 若仍被最终铜覆盖 ≥90%，或新增的 id 落在基线铜的 90% 范围内，判为原生切段，只记 `RT-JRN-05` INFO，不算未记账。覆盖算法是共线投影的区间并集，不依赖段数。
+
+**数据不足时不假装通过**
+
+| 情况 | 行为 |
+|---|---|
+| 基线导出没有 primitiveId | `baseline` 直接 exit 2，不生成账本 |
+| 只记了基线、没有 rounds | `verify` exit 2；`check.py --journal` 记 `RT-JRN-05` UNKNOWN |
+| 最终导出没有 primitiveId | `verify` exit 2（缺 id 就核不了旧段） |
+| 快照里走线无 id | `check.py` 记 UNKNOWN |
+
+**两条纪律**（属于流程，不属于判据，但没它们判据就形同虚设）：
+
+1. **改网络 = 先删后画。** 不许 `line.modify` 直接改 net，也不许把新线叠在旧线上。删之前先 `journal.py ids` 查出旧段 id 并 `record`。
+2. **动一次记一笔。** 不记账的段即使几何完全干净，也无法证明是本流程画的；`RT-JRN-06` 就是为这件事留的。
+
+`examples/journal.rounds.json` + `eda-export.lines.after.json` 账平；`eda-export.lines.overlap.json` 配同一账本 → `RT-JRN-05` FAIL；`journal.rounds.forgot.json` 配 `after` → 三条 `RT-JRN-06` WARN；同账本配 `eda-export.lines.split.json` → 切段被豁免，只出 INFO。
+
 ## 10. 布线自检清单
 
 1. 每个网络的线宽是否来自 `rules.py`（而不是拍的）？
@@ -274,9 +334,10 @@ EM 标准过孔（内径/外径）：12/25、16/30、20/35、24/40、32/50 mil�
 3. 关键信号（时钟、差分、复位、模拟小信号）是否优先、最短、有完整参考平面？
 4. 是否有直角/锐角、悬空线头、自环、孤铜？
 5. 跑过 `check.py` 之后，`RT-DUP-01 / RT-STUB-02` 是否为 0？`RT-LOOP-03 / RT-DETOUR-04` 命中处是改了还是登记进 `allow` 了？
-6. 相邻层是否正交，3W 是否满足？
-7. 差分对是否对称、等长、参考平面连续？
-8. 平面分割宽度是否按电位差取值，是否有跨分割的高速信号？
-9. 过孔尺寸与板厚比例是否合规，BGA 下是否 12mil 且盖阻焊？
-10. 测试点是否覆盖每个网络，位置是否可探？
-11. 丝印是否压焊盘、极性是否可辨？
+6. 布线前记了基线吗？每个 `line.create` / `line.delete` 都记账了吗？`journal.py verify` 是账平（`RT-JRN-05` 无 FAIL、`RT-JRN-06` 无 WARN）吗？
+7. 相邻层是否正交，3W 是否满足？
+8. 差分对是否对称、等长、参考平面连续？
+9. 平面分割宽度是否按电位差取值，是否有跨分割的高速信号？
+10. 过孔尺寸与板厚比例是否合规，BGA 下是否 12mil 且盖阻焊？
+11. 测试点是否覆盖每个网络，位置是否可探？
+12. 丝印是否压焊盘、极性是否可辨？

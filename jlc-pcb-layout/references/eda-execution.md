@@ -133,16 +133,19 @@ eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 3. pcb.import_changes                // 器件上板（从原理图导入）
 4. 咬住锚点：连接器/安装孔/定位孔 → lock
 5. 按计划摆块：power → mcu → io → ...（每块摆完 components.list 回读）
-6. 关键信号优先布线：时钟 → 差分 → 高速 → 模拟小信号
-7. 电源与地：粗线 + 平面 + 过孔缝合
-8. 其余信号线
-9. pcb.pour.create / pour-fit + pour.rebuild
-10. 丝印整理（不压焊盘、极性可辨）
-11. pcb.drc.check + check.py + pcb.report
-12. save（显式保存，别只靠自动保存）
+6. 记布线基线：line-list 导出 → journal.py baseline（per-net primitiveId + 几何）
+7. 关键信号优先布线：时钟 → 差分 → 高速 → 模拟小信号（每次 create/delete 后 record 一笔）
+8. 电源与地：粗线 + 平面 + 过孔缝合
+9. 其余信号线
+10. pcb.pour.create / pour-fit + pour.rebuild
+11. 丝印整理（不压焊盘、极性可辨）
+12. journal.py verify + pcb.drc.check + check.py + pcb.report
+13. save（显式保存，别只靠自动保存）
 ```
 
 **为什么要这个顺序**：板框决定边距，导入决定器件存在，锚点决定剩多少空间，关键信号决定层分配。任何一步提前都会导致返工——而 EDA 没有 undo。
+
+**第 6 步不能省。** 布完再补基线已经晚了：那时分不清哪段铜是本流程画的、哪段是上一轮留下的。基线和账本是唯一能证明"我只动了这些"的东西，也是 `RT-JRN-05/06` 的输入。详见 `routing-rules.md` §9.5。
 
 ---
 
@@ -151,7 +154,8 @@ eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 | 坑 | 现象 | 对策 |
 |---|---|---|
 | `create()` 太宽容 | 参数错/层错时**不报错、返回 undefined** | 每次创建后检查返回值非空，并回读一次 |
-| 走线自动分段 | 线与已有图元相交处被原生切割（调 200 次可能得到 202 段） | 校验几何时别只比段数；用网络长度或连通的 primitiveId 集合判断 |
+| 走线自动分段 | 线与已有图元相交处被原生切割（调 200 次可能得到 202 段） | 校验几何时别只比段数；`journal.py verify` 按 primitiveId 集合比，切段会被自动豁免 |
+| 改线叠画 | 想改走向时直接画了新线、忘了删旧段；两段错开一个线宽时几何判据一句都不报 | **先 `pcb.line.delete` 再画**（不许 `line.modify` 换 net）；每步 `journal.py record` 记账，收尾 `RT-JRN-05` 会指名哪几个 id 没删 |
 | 板框不能用 `Line` | 板框层（11）必须用 Polyline/多边形 | 用 `pcb_PrimitivePolyline` 或 `pcb.outline.set` |
 | 覆铜空网 | `net` 传空串会报"参数不正确"，铺出来是死铜 | 必须传已有网络名（GND / VDD） |
 | 内层 id 猜错 | 以为 3 是内层，结果画到丝印层 | 一律从 `pcb.layers.list` 读 |
@@ -163,12 +167,12 @@ eda.sys_Unit.mmToMil(0.2, 1);   // → 7.9
 
 ---
 
-## 4. 验证三件套
+## 4. 验证四件套
 
 1. **几何**：`pcb.components.list --include-bbox` 回读坐标，与计划文件逐条 diff（允许 ±1mil 网格误差）。
 2. **规则**：`python check.py <snapshot>` 跑规范库；`pcb.drc.check` 跑 EDA 原生 DRC。两者都要过——规范库管"规范级"问题（去耦距离、边距带、朝向、3W、直角），DRC 管"电气级"问题（间距、短路、未布通）。
 3. **布线质量**：`pcb.report` 看每网络长度、差分 skew、等长组 spread。
-4. **画布归属**：布线前存 `pcb.line.list` 基线，布完比增量（按连通 primitiveId 集合，不按段数——EDA 会在交点处自动切段）。对不上就是有非本流程的走线，先停下问，别在别人的结果上继续改。
+4. **画布归属与叠画**：布线前 `line-list` 存基线 → `journal.py baseline`；每步 `record`；布完 `journal.py verify`。按 primitiveId 比，不按段数（EDA 会在交点自动切段）。`RT-JRN-05` FAIL = 声明删的旧段还在，`RT-JRN-06` WARN = 有增删没记账。对不上且解释不通就是有非本流程的走线，先停下问，别在别人的结果上继续改。
 
 ```bash
 easyeda pcb components-list --include-bbox --include-pads --json > comps.json   # 参数名以 easyeda actions 为准
@@ -177,7 +181,8 @@ easyeda pcb via-list  --json > vias.json
 easyeda pcb outline-get --json > outline.json
 python scripts/snap.py --components comps.json --lines lines.json \
     --vias vias.json --outline outline.json -o snapshot.json
-python check.py snapshot.json --min-severity WARN
+python scripts/journal.py verify --journal journal.json --final lines.json
+python check.py snapshot.json --min-severity WARN --journal journal.json
 ```
 
 > **三份必须分开导出。** `components-list` 的输出里**没有走线**，`line-list` 里没有器件。早期这一段的写法是
@@ -195,7 +200,7 @@ python check.py snapshot.json --min-severity WARN
 - 需要删器件、清空布线、改板框；
 - 计划里有块"放不下"（`overflow_blocks` 非空）；
 - 涉及安规间距（>60V）而你推不出电位；
-- 画布上出现不是本流程创建的走线（段数暴涨、成片连通），疑似被自动布线/自动布局动过——留着还是清掉，要人决定；
+- 画布上出现不是本流程创建的走线，或 `journal.py verify` 报出解释不通的增删、段数暴涨成片连通——疑似被自动布线/自动布局动过——留着还是清掉，要人决定；
 - 用户给的坐标与结构图矛盾。
 
 这五种情况**停下来问**，比"先画了再说"便宜得多。

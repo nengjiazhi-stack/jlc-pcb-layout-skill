@@ -26,7 +26,7 @@ description: 在嘉立创EDA专业版里按客户需求做原理图、再把 PCB
 | 计算层 | 载流/间距/过孔/阻抗 + 上拉/限流/负载电容/偏置/电感 | `scripts/rules.py`、`scripts/schem.py calc`、`assets/constraints.json` |
 | 执行层 | 网表生成、ERC、落笔脚本、布局计划、合规检查 | `scripts/schem.py`、`scripts/plan.py`、`scripts/check.py`、`references/eda-execution.md` |
 
-## 八条硬规矩
+## 九条硬规矩
 
 1. **不许凭记忆报工艺数值**。任何"线要多宽 / 间距多少 / 过孔多大 / 爬电多少 / 器件间距多少"的问题，先跑 `rules.py`，或查 `assets/constraints.json`。查不到就说不确定，并给出保守取值 + 标注假设。
 2. **不许凭记忆报电路数值**。上拉、限流电阻、晶振负载电容、RS485 偏置、buck 电感、TVS 档位，先跑 `schem.py calc`，或查 `constraints.json → schematic`。
@@ -36,6 +36,7 @@ description: 在嘉立创EDA专业版里按客户需求做原理图、再把 PCB
 6. **不许把「没查」说成「通过」**。`check.py` 的 `UNKNOWN` 表示这条检查没跑成（缺 traces、缺高度、缺丝印、块级约束无几何判据）。有 UNKNOWN 时判定是 `INCOMPLETE`，**不是通过**。交付物里必须列出哪些项没查，不许只报 `FAIL 0`。
 7. **不许无验证收工**。原理图阶段必须 ERC 过 FAIL=0 且 EDA 原生 `sch_Drc` 通过；PCB 阶段必须跑 `check.py` + `drc-check`。违规逐条回修或明确记录为"已接受的风险"。
 8. **不许用自动布线 / 自动布局**。走线只能 `pcb.line.create` 逐段写；`eda.pcb_Document.autoRouting()`、EDA 菜单里的自动布线、任何 auto-route 类动作、以及"导出 DSN/SES 交给外部路由器"这类替代路线，一个都不许碰。一次调用改动整块板、EDA 没有 undo、单次最长 900 秒、报错时无法逐段归因——这四条决定了它一旦跑起来就不可控。用户明确要求时，先讲清后果、拿到确认，再记进交付物的「未按规范验证项」。
+9. **改线先删后画，动一次记一笔。** 改某网络的走向、或给它续一段之前，先把要替换的旧段 `pcb.line.delete` 掉，再画新的；**不许在旧线上叠着画**（EDA 不会自动合并同网重叠铜，也没有 undo）。每次 create/delete 之后立刻把那一段的 primitiveId 记进 `journal.py` 的账本，收尾 `journal.py verify` 对账。`RT-JRN-05` FAIL = 账上声明删了、画布上还在；`RT-JRN-06` WARN = 有增删没记账。**段数对不上不算出错，id 对不上才算** —— EDA 会在交点自动切段。
 
 ## 先判断任务模式
 
@@ -152,7 +153,7 @@ python scripts/plan.py assets/plan.example.json -o my_plan.json --emit-steps ste
 - 每摆完一个功能块就 `pcb.components.list --include-bbox` 回读一次，确认位置真的落上去了。
 - 每次只做一类操作，做完立刻验证。EDA 没有 undo。
 - 走线用 `pcb.line.create`，一段一段来，`net` 必须写对网络名（从 `pcb.nets.list` 取，别拼）。**不要用自动布线**，理由见 `references/eda-execution.md` §1 的「禁用项」。
-- **布线前先记基线，布完对增量。** 动手前跑一次 `easyeda pcb line list --json > lines.before.json`（子命令以 `easyeda actions` 为准），记下段数与网络集合。布完再数一次：增量应当等于你实际 `create` 的段数——EDA 会在交点处自动分段，所以按**连通 primitiveId 集合**比，别死比段数。增量对不上 = 有别的进程或上一轮动过画布，按红线停下来问。
+- **布线前先记基线，布完对账（按 id 不按段数）。** 动手前 `easyeda pcb line-list --json > lines.pre.json`（子命令以 `easyeda actions` 为准），跑 `snap.py`/`journal.py baseline` 把每个网络的 primitiveId 与几何存下来；之后每次 `line.create`/`line.delete` 都用 `journal.py record` 记一笔；布完 `journal.py verify --final lines.post.json` 对账。EDA 会在交点处把线切开（调 200 次可能得到 202 段），所以只能比 id 集合，比段数必误报。对不上且解释不通 = 有别的进程或上一轮动过画布，按红线停下来问。
 - 铺铜 `net` 不能为空（空网 = 死铜）。
 - 多步批量别写 shell 胶水，写成 playbook 先 `easyeda apply steps.json --dry-run`。
 
@@ -173,6 +174,12 @@ python scripts/check.py my_board.json      # 规范符合性（本 skill 的规�
 easyeda pcb drc-check                      # EDA 原生 DRC：间距/短路/未布通
 easyeda pcb check                          # DFM 级：悬空端/酸角/丝印翻转/孤铜
 easyeda pcb report                         # 网络长度/差分偏斜
+
+# 过程对账（布线阶段每步记账，收尾核 —— 专抓"改线时没删旧段"）
+python scripts/journal.py baseline --lines lines.pre.json -o journal.json
+python scripts/journal.py record --journal journal.json --net VDD --delete 101 --add 301,302
+python scripts/journal.py verify --journal journal.json --final lines.json
+python scripts/check.py my_board.json --journal journal.json   # 并入 RT-JRN-05/06
 ```
 
 **没有 `traces` 的快照不能用来判走线。** `components-list` 的输出里没有走线，早期写法从它里面取 `traces` 拿到的一直是空列表，于是 3W/直角/悬空/线宽四项全部静默跳过。`snap.py` 把这件事变成硬错误：缺 `--lines` 直接 exit 2，不生成"看起来正常"的空快照。确实还没布线才加 `--allow-empty`，此时 `check.py` 记 `FAB-DATA` UNKNOWN，`--gate` 判 `INCOMPLETE`。
@@ -185,10 +192,25 @@ easyeda pcb report                         # 网络长度/差分偏斜
 | `RT-STUB-02` | 残段：从自由端走到第一个岔路口/焊盘的累计长度 | ≥ max(200mil, 10×线宽) | FAIL |
 | `RT-LOOP-03` | 同网络闭合铜环（TY-6.5.6-8） | 周长 ≥50mil | WARN |
 | `RT-DETOUR-04` | 生成树铜长 / 引脚曼哈顿最小生成树 | >1.8（高速网络 >1.3） | WARN |
+| `RT-JRN-05` | 账本声明删掉的 primitiveId 最终还在（旧段没删就叠画）／声明新增的 id 找不到 | 无阈值，按 id 集合比 | FAIL |
+| `RT-JRN-06` | 某网络的 id 集合变了，但没有对应的记账（增删未登记） | 切段按 `journal_cover_ratio`（0.9）豁免 | WARN |
 
 判据只认几何、不认意图。**故意留着的必须登记**，否则照报：测试点引线、天线焊盘、蛇形等长、差分补偿写进 `trace_redundancy.allow`，形如 `{"net":"TP_*","rules":["RT-STUB-02"],"max_len_mil":400,"reason":"测试点引线按设计保留"}`。登记生效后会以 `RT-ALLOW` INFO 列出来——豁免不是静默，"登记一次永久静音"也不成立（超过 `max_len_mil` 照样报）。
 
 数据不够时不编结论：整份快照没有焊盘坐标 → 残段判据不参与（缺数据由 `FAB-DATA` 报）；某个网络自己一个焊盘/过孔坐标都没有 → 该网络报 `RT-STUB-02` UNKNOWN。`examples/snapshot.redundancy.json` 是四条判据的活样例，`snapshot.redundancy.clean.json` 是同一块板清干净后（RT-* 全 0）的样子。
+
+**过程对账**（`RT-JRN-*`）。上面四条只看铜，抓不到"旧段没删、新线只盖住一小截"——两段错开一个线宽就不重叠，铜却实实在在多出来了。这一类只能靠 id 账本：布线前记基线、每步记增删、收尾比集合。
+
+```bash
+python scripts/journal.py baseline --lines lines.pre.json -o journal.json
+python scripts/journal.py record --journal journal.json --net VDD --delete 101 --add 301,302
+python scripts/journal.py verify --journal journal.json --final lines.post.json
+```
+
+- `RT-JRN-05` FAIL：账上声明删的 id 还在画布上 → 叠画源头，先 `pcb.line.delete` 再重画。
+- `RT-JRN-06` WARN：某网络的 id 变了但没记账。**切段自动豁免**：消失的 id 若仍被最终铜覆盖 ≥90%、或新增的 id 落在基线铜范围内，判原生切段只记 INFO。所以别拿段数去比，那条路必然误报。
+- 只记基线、没有 `rounds` 就不给对账（exit 2），`check.py --journal` 会记 `RT-JRN-05` UNKNOWN。**没记账不等于没问题。**
+- 活样例：`journal.rounds.json` + `eda-export.lines.after.json`（账平）；`eda-export.lines.overlap.json`（叠画 → FAIL）；`journal.rounds.forgot.json` + `after`（漏记账 → WARN）；同账本 + `eda-export.lines.split.json`（原生切段 → 只记 INFO 豁免）。
 
 `check.py` 输出的每条违规都带**规则号**（如 `TY-6.5.6-12`、`AEST-ALIGN`、`EM-5.4.11`、`FAB-SHORT`、`RT-DUP-01`），可回 `references/` 定位原文。严重度分四档：
 
@@ -315,7 +337,14 @@ python scripts/snap.py --components comps.json --allow-empty                # �
 python scripts/check.py snapshot.json [--min-severity FAIL|WARN|UNKNOWN|INFO] [--json] [--strict]
 python scripts/check.py snapshot.json --netlist nl.json              # 并入 ERC + 块级布局约束
 python scripts/check.py snapshot.json --netlist nl.json --gate        # 单一判定：BLOCKED/INCOMPLETE/REVIEW/PASS
+python scripts/check.py snapshot.json --journal journal.json          # 并入过程对账 RT-JRN-05/06
 python scripts/check.py snapshot.json --require-known                 # 有 UNKNOWN 就返回 2
+
+# 布线账本（过程对账，防叠画）
+python scripts/journal.py baseline --lines lines.pre.json -o journal.json
+python scripts/journal.py record --journal journal.json --net VDD --delete 101 --add 301,302
+python scripts/journal.py verify --journal journal.json --final lines.post.json [--json]
+python scripts/journal.py ids --lines lines.post.json --net VDD       # 查某网络现有哪些 id
 
 # ---- 原理图（schem.py）----
 python scripts/schem.py blocks                              # 15 个功能块清单
@@ -341,7 +370,7 @@ python scripts/schem.py calc tvs      --vop 24
 python scripts/schem.py calc usb-cc
 ```
 
-`check.py` 覆盖 20 类：出框、板边净空、courtyard 间距、BGA 禁布、安装孔禁布、去耦距离（按最近 IC）、晶振距离、朝向一致性、**有极性件朝向与正交**、**同封装 IC 的 1 脚朝向**、**器件高度与高矮混放**、**电感间距与正交（车规）**、**重心平衡**、**连接器插拔净空**、**MARK 数量与分布**、悬空线头、直角/锐角、3W 与异网短路、过孔孔厚比、图面整洁度。数据缺就降级为 `UNKNOWN`（不是 INFO），`--gate` 判 `INCOMPLETE`，**不会假装通过**。
+`check.py` 覆盖 21 类：出框、板边净空、courtyard 间距、BGA 禁布、安装孔禁布、去耦距离（按最近 IC）、晶振距离、朝向一致性、**有极性件朝向与正交**、**同封装 IC 的 1 脚朝向**、**器件高度与高矮混放**、**电感间距与正交（车规）**、**重心平衡**、**连接器插拔净空**、**MARK 数量与分布**、悬空线头、直角/锐角、3W 与异网短路、过孔孔厚比、**冗余走线（RT-\*）**、**布线过程对账（RT-JRN-\*，需 --journal）**。数据缺就降级为 `UNKNOWN`（不是 INFO），`--gate` 判 `INCOMPLETE`，**不会假装通过**。
 
 带 `--netlist` 时另跑块级约束：`BLK-DECAP`（去耦贴 IC ≤2mm）、`BLK-ESD`（保护器件贴连接器 ≤5mm）能几何硬算；其余 `BLK-MANUAL` 汇总报 UNKNOWN —— **程序没报错不代表这些约束满足了**。
 
@@ -359,6 +388,9 @@ python scripts/check.py examples/snapshot.decap.ok.json  --netlist examples/netl
 python scripts/check.py examples/snapshot.decap.bad.json --netlist examples/netlist.decap.json   # 应报 BLK-DECAP FAIL
 python scripts/check.py examples/snapshot.redundancy.json        # 应报 RT-DUP-01 / RT-STUB-02 FAIL，RT-LOOP-03 / RT-DETOUR-04 WARN
 python scripts/check.py examples/snapshot.redundancy.clean.json  # 同一块板清掉多余铜后，RT-* 应 0 条
+python scripts/journal.py verify --journal examples/journal.rounds.forgot.json --final examples/eda-export.lines.after.json    # 应报 3 条 RT-JRN-06 WARN
+python scripts/journal.py verify --journal examples/journal.rounds.json --final examples/eda-export.lines.overlap.json         # 应报 RT-JRN-05 FAIL（叠画）
+python scripts/journal.py verify --journal examples/journal.rounds.forgot.json --final examples/eda-export.lines.split.json    # 切段应被豁免：0 FAIL 0 WARN，只有 INFO
 python scripts/schem.py netlist examples/spec.example.json -o n.json --report   # 应报 76 器件 / 57 网络
 python scripts/schem.py netlist examples/spec.example.json --chip rs485=sp3485 --chip power_ldo=ams1117_33 -o n2.json
 python scripts/schem.py erc examples/netlist.example.json                            # 应报 FAIL 0 / WARN 0
@@ -375,6 +407,7 @@ python scripts/schem.py chips                                                   
 - 不在 `.epro`/工程文件层面做二进制修改，一切通过 API/CLI。
 - **不调用任何自动布线 / 自动布局功能。** 包括 `eda.pcb_Document.autoRouting()`、EDA 菜单里的"自动布线"、CLI 里任何 auto-route 类动作，也不要去找"文件交换式自动布线"之类的替代路线。走线只能 `pcb.line.create` 逐段写。理由：一次调用动整块板而 EDA 没有 undo；单次最长跑到 900 秒，超时留下一半布通的板；出问题无法逐段归因，`check.py` 报 3W/45° 时你指不出是哪一步错。用户明确要求"就用自动布线"时，先说明上述后果并要一句确认，再写进交付物的「未按规范验证项」。
 - **画布上出现不是本流程创建的走线就停下。** 判定特征：段数远超计划、成片网络一次性连上、走线绕过你摆的坐标。这说明有人（或上一轮的你）跑过自动布线或自动布局，**不要在污染的画布上继续改**——先问用户是留还是清。
+- **不在旧线上叠着画。** 改某个网络的走向或续一段之前，先 `pcb.line.delete` 掉被替换的旧段再画新的，并把那一段的 id 记进 `journal.py` 账本。EDA 不会自动合并同网络的重叠铜，也没有 undo 能退回。收尾 `RT-JRN-05` FAIL 就是"旧段还在"——那不是多一根线，是同一段铜画了两遍：蚀刻留残渣、线宽虚胖导致阻抗突变，高速线上直接算错。**判据抓不全（错开一个线宽就不重叠），账本抓得全。**
 - 不虚构 DRC 结果。没跑就是没跑。
 - **不编 LCSC 料号**。没有料号就停在选型，`playbook` 会拒绝生成脚本——不要把 `--allow-missing` 当绕过手段。
 - 不绕过 ERC 的 FAIL 直接落笔。真要先看效果，就把 FAIL 逐条写进交付物并标注"未修复"。
@@ -404,7 +437,8 @@ scripts/
   rules.py                   计算与查表（线宽/间距/过孔/阻抗/层数）
   plan.py                    布局坐标计划生成器（输出 playbook / shell）
   snap.py                    EDA 回读三源合并成 check.py 的快照（缺走线数据就拒绝生成）
-  check.py                   规范符合性检查器（布局 16 类 + 走线 8 类含 4 条 RT-* + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
+  journal.py                 布线账本：按 primitiveId 记增删，收尾对账（抓叠画/未记账）
+  check.py                   规范符合性检查器（布局 16 类 + 走线 8 类含 4 条 RT-* + 过程对账 2 类 + 整洁度 4 类 + 块级 2 类，四态含 UNKNOWN）
   schem.py                   原理图生成与校验（spec/netlist/erc/bom/bind/playbook + 11 个计算器）
 assets/
   constraints.json           全部数值约束（机器可读，唯一真源）
@@ -427,8 +461,14 @@ examples/
   snapshot.redundancy.json   冗余走线反面样例（重复段/残段/自环/绕行各一条，四个 RT-* 全命中）
   snapshot.redundancy.clean.json  同一块板清掉多余铜后（RT-* 全 0，验证不会滥报）
   eda-export.components.json 假的 components-list 输出（验证 snap.py 的器件/焊盘字段映射）
-  eda-export.lines.json      假的 line-list 输出（3 段走线 / 2 个网络）
+  eda-export.lines.json      假的 line-list 输出（3 段走线 / 2 个网络，带 primitiveId）
+  eda-export.lines.after.json     改线后的正确结果（101 已删、301→303 绕行；账本对上）
+  eda-export.lines.overlap.json   反面：声明删了 101 但它还在 —— 叠画（RT-JRN-05 FAIL）
+  eda-export.lines.split.json     同一根线在交点被原生切成 401/402（验证切段被豁免、不按段数比）
   eda-export.vias.json       假的 via-list 输出（1 个过孔）
+  journal.baseline.json      布线前基线（per-net primitiveId + 几何）
+  journal.rounds.json        记账正确的账本（删 101 / 加 301-303）
+  journal.rounds.forgot.json 反面：只记了删、忘了记加（RT-JRN-06 WARN）
 ```
 
 ## 命令写法约定
