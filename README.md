@@ -11,15 +11,15 @@
 ## 两块能力
 
 ```
-客户需求 ──schem.py──► 网表 ──ERC+audit──► 落笔原理图 ──► 导入PCB ──plan.py──► 布局计划 ──► 走线 ──check.py──► 投板
+客户需求 ──schem.py──► 网表 ──ERC──► 落笔原理图 ──► 导入PCB ──plan.py──► 布局计划 ──► 走线 ──check.py──► 投板
            原理图                     ↑ 不合规停在这                            PCB Layout
 ```
 
 | | 原理图 | PCB Layout |
 |---|---|---|
 | 输入 | 客户功能描述 | 网表 + 板框约束 |
-| 核心工具 | `schem.py`（spec/netlist/erc/audit/bom/bind/playbook） | `plan.py` + `check.py` |
-| 规则库 | 15 个功能块 + 5 颗芯片实例 + 23 条 ERC + 10 条落笔前审计 | 6 套企业规范 + 38 条 DRC/DFM/块级规则 |
+| 核心工具 | `schem.py`（spec/netlist/erc/bom/bind/playbook） | `plan.py` + `check.py` |
+| 规则库 | 15 个功能块 + 5 颗芯片实例 + 23 条 ERC | 6 套企业规范 + 38 条 DRC/DFM/块级规则 |
 | 数值 | 上拉/限流/负载电容/偏置/电感/TVS 档位 | 载流线宽/电气间距/过孔/叠层/阻抗 |
 | 落笔 | `eda.sch_*` API | `easyeda` CLI + `eda.pcb_*` API |
 
@@ -39,12 +39,12 @@
 ## 结构
 
 ```
-需求层  references/schematic-workflow.md   澄清清单 / 六步流水线 / 四道门禁
+需求层  references/schematic-workflow.md   澄清清单 / 五步流水线 / 三道门禁
 电路层  assets/circuit-blocks.json         15 个功能块的可执行定义
         references/circuit-blocks.md       每块"为什么这么接 + 常见错误"
 芯片层  assets/chip-variants.json           5 颗具体型号：真实脚号/料号/块级布局约束/出处
         references/chip-variants.md        收录标准 + 7 种布局约束的可检查性
-规则层  references/schematic-rules.md      23 条 ERC + 10 条落笔前审计 判据 + 数值表
+规则层  references/schematic-rules.md      23 条 ERC 判据 + 数值表
         references/layout-rules.md 等      6 份企业规范转写（TY- / EM- / BELL- / ASUS-）
 计算层  scripts/schem.py                   11 个电路计算器
         scripts/rules.py                   载流/间距/过孔/层数/阻抗
@@ -88,8 +88,6 @@ cd ~/.codex/skills/jlc-pcb-layout
 python scripts/schem.py netlist examples/spec.example.json -o n.json --report
 python scripts/schem.py erc examples/netlist.example.json
 python scripts/schem.py erc examples/netlist.bad.json
-python scripts/schem.py audit examples/netlist.example.json
-python scripts/schem.py audit examples/netlist.xpin.json
 python scripts/rules.py width --current 3 --copper 1oz
 python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 ```
@@ -101,9 +99,6 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 
 检查结果：FAIL 0 / WARN 0 / INFO 12                    ← 成品网表：结构干净，INFO 全是"待选型/GPIO 未分配"
 检查结果：FAIL 4 / WARN 15 / INFO 2                    ← 反面样例：LED 无限流、线圈无续流、TVS 选小、CC 缺下拉
-
-审计结果：FAIL 0 / WARN 0 / UNKNOWN 1 / INFO 1        ← 成品网表的"该有的有没有"：唯一缺口是 U2 引脚名只有脚号
-审计结果：FAIL 2 / WARN 2 / UNKNOWN 1 / INFO 2        ← 反面夹具：BOOT 无自举电容、VIN 无 100nF、EN 悬空、LED 无限流
 
 最小线宽：1.5mm (59.1mil)   该档载流：3.2A
 检查结果：FAIL 1 / WARN 14 / UNKNOWN 2 / INFO 1        ← demo 板：故意埋的 VDD×GND 短路
@@ -137,34 +132,12 @@ python scripts/check.py examples/snapshot.demo.json --min-severity WARN
 
 `FAIL` 是会烧或根本不动；`WARN` 是大概率出问题；`INFO` 是数据不足或已声明例外——**INFO 不等于通过**，交付时要逐条确认。
 
-### 10 条落笔前审计
-
-ERC 查「连了什么、电气对不对」，`schem.py audit` 查「**该有的东西有没有**」。两条都过才许落笔。
-
-| 规则 | 查什么 | 为什么单独一条 |
-|---|---|---|
-| `SCH-BOM-XPIN` FAIL | **跨引脚电容**漏了 | `SETC`/`VREG`/`CP`/`BOOT`/`SS`/`COMP` 这些脚不在 VCC 上，以芯片为中心设计时最易漏，漏了芯片不工作 |
-| `SCH-BOM-DECAP` FAIL | 电源脚没有 10nF~1µF 且接地的电容 | 必须真的接地，跨在两路电源之间的不算 |
-| `SCH-BOM-PULL` WARN | 控制脚悬空 | 必须真的被电阻拉到电源/地，串在信号路上的电阻不算 |
-| `SCH-BOM-LED` WARN | LED 没串限流 | 必须真的串联，共用电源轨上的分压电阻不算 |
-| `SCH-BOM-CONN` INFO | 外露接口没 ESD | USB/485/CAN/RJ45 都算 |
-| `SCH-BOM-TP` INFO | 全板没测试点 | 量产返修靠它 |
-| `SCH-NC-UNCONN` INFO | 引脚没接网络 | 含"指向不存在的网络"这种悬空引用 |
-| `SCH-SUPPLY-STOCK` 动态 | 库存 0→FAIL，<50→WARN，**未核验→UNKNOWN** | 料号真实但库存 0，一样下不了单 |
-| `SCH-SUPPLY-LIB` INFO | 非基础库/优选库 | 长期供货与价格都不占优 |
-| `SCH-AUDIT-BLIND` UNKNOWN | 引脚名只有脚号 | 去耦和专用脚**根本没查**，不能算过 |
-
-三条判定纪律都是为了堵「看起来查了、其实没查」：**「网上有电容」不算去耦、「网上有电阻」不算上拉、「引脚名是数字」不算通过。**
-
-`--gate` 的判定：`1` BLOCKED（有 FAIL）、`2` INCOMPLETE（有 UNKNOWN）、`0` PASS。库存没查、引脚名不可识别这两类会让检查**根本没跑**，`FAIL 0` 看着像合格，`INCOMPLETE` 就是不让它蒙过去。
-
-### 四道门禁
+### 三道门禁
 
 | 门禁 | 不过会怎样 |
 |---|---|
 | 需求缺口未列清，不许出网表 | 带着错误假设画完，返工 = 重画 |
 | ERC 有 FAIL，不许落笔 | 把会烧的电路画进 EDA |
-| 审计有 FAIL 或 UNKNOWN，不许落笔 | 外围漏了/库存没查，落笔只是把问题画得更清楚 |
 | 关键器件没选型，不许落笔 | 编个料号 → 批量买错料 → 整批报废 |
 
 都是 `schem.py` 里写死的返回码（`--strict` 时 WARN 也算不过），不靠自觉。
@@ -178,17 +151,15 @@ python scripts/schem.py chips                    # 看有哪几颗、各自什�
 python scripts/schem.py netlist spec.json --chip rs485=sp3485 --chip power_ldo=ams1117_33 -o nl.json
 ```
 
-| id | 块 | 型号 | 料号 | 引脚 | 货源 |
-|---|---|---|---|---|---|
-| `ams1117_33` | power_ldo | AMS1117-3.3 | C6186 | 3/3 完整 | 库存未核验 |
-| `sp3485` | rs485 | SP3485 | 需选型 | 8/8 完整 | 无料号 |
-| `sy8089` | power_buck | SY8089A | 需选型 | 5/5 完整 | 无料号 |
-| `usb_c_16p` | usb_typec_ufp | USB-C 16P | 需选型 | 部分（DP/DN 双焊盘） | 无料号 |
-| `esp32s3_wroom1` | mcu_min | ESP32-S3-WROOM-1 | 需选型 | **不可套用** | 无料号 |
+| id | 块 | 型号 | 料号 | 引脚 |
+|---|---|---|---|---|
+| `ams1117_33` | power_ldo | AMS1117-3.3 | C6186 | 3/3 完整 |
+| `sp3485` | rs485 | SP3485 | 需选型 | 8/8 完整 |
+| `sy8089` | power_buck | SY8089A | 需选型 | 5/5 完整 |
+| `usb_c_16p` | usb_typec_ufp | USB-C 16P | 需选型 | 部分（DP/DN 双焊盘） |
+| `esp32s3_wroom1` | mcu_min | ESP32-S3-WROOM-1 | 需选型 | **不可套用** |
 
-**只有一颗是「引脚完整 + 有料号」的可用组合**，而且它的库存还没查——所以 `audit` 会把它报成 `UNKNOWN`，不是 `PASS`。其余料号空着是故意的：宁可让落笔脚本拒绝生成，也不让你拿着编出来的 C 号去下单。
-
-货源分 P0-P3 四档（基础库+库存≥500 / 优选库+≥100 / ≥50 / <50），库存 0 直接 FAIL。**`null` 一律 UNKNOWN，不参与分档**——给个 999 看着方便，但那是编的数据，和编料号一样危险，只是错误暴露在下单那一刻。详见 `references/chip-variants.md`。
+**只有一颗是「引脚完整 + 有料号」的可用组合。** 其余料号空着，是故意的：宁可让落笔脚本拒绝生成，也不让你拿着编出来的 C 号去下单。
 
 最后那颗 `esp32s3_wroom1` 是个刻意留的反面教材：它和 `mcu_min` 块的引脚名根本对不上（ESP32-S3 内建晶振、调试是 JTAG、复位脚叫 EN），硬套会生成一张看起来正常、实际全错的网表。所以它带 `blocked_by`，套用时直接报错并告诉你该新建哪种块。**能明确说「不行」的知识，比含糊能用的值钱。**
 
@@ -206,17 +177,6 @@ python scripts/schem.py netlist spec.json --chip rs485=sp3485 --chip power_ldo=a
 
 摆件顺序是硬约束（P0 机械锁定 → P1 功率热源 → P2 核心 IC → P3 就近器件 → P4 敏感小信号 → P5 其余阻容 → P6 测试点/MARK/丝印），前一档未锁定不得进入下一档。
 
-### 两趟高度：估算排一遍，回读真实高度再排一遍
-
-`plan.py` 排坐标靠 `w_mm`/`h_mm`，填的通常是封装名义尺寸。但 EDA 符号的实际高度经常不一样——带屏蔽罩的模块、带散热片的 LDO、带排针的插座都高一截。只排一趟，叠件要等 `check.py` 事后才报。
-
-```bash
-python scripts/plan.py spec.json -o pass1.json --emit-heights heights.todo.json   # 第一趟 + 列回读清单
-python scripts/plan.py spec.json --heights heights.json -o plan.json --report      # 第二趟用实测重排
-```
-
-报告末行的 `高度：实测 N / 估算 M` 要读到**估算 0** 才算收工。仍标 `estimated` 的器件，叠件风险**没有排除**——那不是"大概没事"，是"没查"。计划里每颗器件带 `height_source`（`measured`/`estimated`/`given`），可逐条核对。
-
 ## 目录结构
 
 ```
@@ -229,7 +189,7 @@ jlc-pcb-layout-skill/
     ├── references/         原理图工作流/功能块/ERC 判据 + 6 份规范转写 + 执行手册
     ├── scripts/            schem.py / rules.py / plan.py / check.py
     ├── assets/             constraints.json（数值唯一真源）+ circuit-blocks.json
-    └── examples/           需求样例、成品 spec/netlist、反面 netlist（ERC/审计）、6 个 PCB 快照、实测高度样例、两份走查
+    └── examples/           需求样例、成品 spec/netlist、反面 netlist、6 个 PCB 快照、两份走查
 ```
 
 阈值全部集中在 `assets/constraints.json`（原理图部分在 `schematic` 节），觉得哪个太严太松直接改数字，不用改代码。功能块在 `assets/circuit-blocks.json`，加块的方法见 `references/circuit-blocks.md` 末节。
@@ -239,8 +199,6 @@ jlc-pcb-layout-skill/
 - **不编料号。** 拓扑块只给"必接什么、参数范围"；芯片实例只收核对过 datasheet 的脚号，料号没有就留空。这是刻意的——料号编错会造成批量买错料，比画错图贵得多。
 - **`UNKNOWN` 不等于通过。** 缺 traces、缺高度、缺丝印、块级约束无几何判据，都会报 UNKNOWN。`--gate` 判 `INCOMPLETE`，退出码 2。把它当 `FAIL 0` 读，就等于把"没查"当成"没问题"。
 - **ERC 查不出全部。** 它只查结构性错误（悬空、缺失、极性、数值越界）。查不出：选型是否合适、时序是否满足、环路是否稳定、EMC 是否过关。这些必须人看。
-- **审计只查「有没有」，不查「合不合适」。** `audit` 能发现 BOOT 脚没有自举电容，但发现不了这颗电容选了 1µF 而手册要求 100nF；能发现库存未核验，但不会替你判断这颗料值不值得用。它堵的是"整类漏掉"，不是"选错值"。
-- **库存必须你自己查。** 本仓库不联网、不调 MCP、不缓存任何商城数据。`supply.lcsc_stock` 恒为 `null` 时 `audit` 恒报 UNKNOWN——这是设计如此，不是 bug。
 - **落笔只保证逻辑连通。** `playbook` 生成的脚本用"每个引脚拉一段带网络名的短线"建立连接，同名即连通。走线走向要人工整理——逻辑连通可验证，好看不可验证。
 - **不装 CLI 也能用前两层。** 只能算数值、出网表、跑 ERC、出 BOM，最后落笔得自己在画布上点。
 - **只做立创EDA 专业版，不做通用 EDA。** 落笔用的 `sch_*` / `pcb_*` API、10mil 原理图栅格、25mil PCB 栅格、A4 图幅 1170×825、`lceda-pro` / `easyeda` CLI 全部只对嘉立创EDA专业版成立。换到 KiCad、Altium、PADS 等工具，判据层（数值计算、ERC、网表）仍可读，但执行层一行都用不了——本仓库不提供、也不打算提供其它 EDA 的适配。

@@ -546,40 +546,6 @@
       "SCH-ADC-IMP": "WARN",
       "SCH-BINDING": "INFO",
       "SCH-DATA": "INFO"
-    },
-    "audit": {
-      "_note": "落笔前审计（schem.py audit）的阈值与判据。只判『该有的外围有没有』『货源能不能下单』，不判选型是否最优。",
-      "_source": "判据结构参考 GarinGao/HardwareDesign-skills（MIT）的 hardware-design.md 选型 P0-P3 与 BOM 12 项勾销清单；阈值口径按立创商城基础库/优选库定义与常见工程实践重定，非原文照抄。",
-      "decap": {
-        "min_nf": 10.0,
-        "max_uf": 1.0,
-        "note": "去耦判定：IC 每个电源脚所在网络上，必须存在一颗 10nF~1uF 的电容（典型 100nF），且另一端接地。"
-      },
-      "supply": {
-        "p0": {"library": ["basic"], "min_stock": 500, "label": "首选：基础库 + 库存≥500 + 有销量"},
-        "p1": {"library": ["preferred"], "min_stock": 100, "label": "可用：优选库 + 库存≥100 + 有销量"},
-        "p2": {"min_stock": 50, "label": "备选：库存≥50 的非基础/非优选"},
-        "p3": {"min_stock": 0, "label": "慎用：库存<50 或无销量，必须备注替代"},
-        "note": "stock 为 null 时一律 UNKNOWN，不得算作任何一档。库存 0 直接 FAIL。"
-      },
-      "xpin": {
-        "pins": ["SETC", "VREG", "VREGOUT", "REGC", "VCAP", "VCP", "VC", "CP1", "CP2", "CP", "BOOT", "BST", "SS", "COMP", "TS", "TEMP", "FILT"],
-        "note": "跨引脚电容：这些脚不在 VCC 上，最易在『以芯片为中心』的设计里漏掉。缺电容 → 芯片不工作或复位异常，故判 FAIL。"
-      },
-      "decap_pins": ["VCC", "VDD", "VDDIO", "VLOGIC", "AVDD", "DVDD", "VBUS", "VIN"],
-      "ng_pins": ["EN", "NRST", "RESET", "NCS", "CS", "SHDN", "XSHUT", "BOOT0", "IO0", "STBY", "FAULT"],
-      "audit_severity": {
-        "SCH-BOM-DECAP": "FAIL",
-        "SCH-BOM-XPIN": "FAIL",
-        "SCH-BOM-PULL": "WARN",
-        "SCH-BOM-LED": "WARN",
-        "SCH-BOM-CONN": "INFO",
-        "SCH-BOM-TP": "INFO",
-        "SCH-NC-UNCONN": "INFO",
-        "SCH-SUPPLY-STOCK": "UNKNOWN",
-        "SCH-SUPPLY-LIB": "INFO",
-        "SCH-AUDIT-BLIND": "UNKNOWN"
-      }
     }
   }
 }

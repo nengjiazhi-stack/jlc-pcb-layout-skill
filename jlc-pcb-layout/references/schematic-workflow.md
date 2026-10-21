@@ -58,7 +58,7 @@
 
 ---
 
-## 2. 六步流水线
+## 2. 五步流水线
 
 ### A. 需求 → 规格（`schem.py spec`）
 
@@ -109,22 +109,7 @@ python scripts/schem.py erc netlist.json --min-severity WARN --strict   # CI 门
 
 `examples/netlist.bad.json` 是故意埋了 4 处 FAIL / 15 处 WARN 的反面样例，拿来验证检查器真的会报。
 
-### D. 落笔前审计（`schem.py audit`）
-
-```bash
-python scripts/schem.py audit netlist.json --gate     # 1 BLOCKED / 2 INCOMPLETE / 0 PASS
-```
-
-ERC 查「连了什么、电气对不对」，audit 查「**该有的东西有没有**」。10 条规则，判据见 `references/schematic-rules.md` §12。
-
-两条纪律：
-
-- **`UNKNOWN` 不能当通过。** 库存没查、引脚名只有脚号，这两类都属"检查根本没跑"，`--gate` 判 `INCOMPLETE`（exit 2）。
-- **别为了让 audit 变绿去补假数据。** 给 `supply.lcsc_stock` 填个 999 确实能让它过，但那和编料号是同一件事——只是错得更晚，在下单那一刻暴露。
-
-`examples/netlist.xpin.json` 是埋了 4 类缺陷的反面夹具（BOOT 无自举电容、VIN 无 100nF、EN 悬空、LED 无限流），应报 `FAIL 2 / WARN 2 / UNKNOWN 1 / INFO 2`。
-
-### E. 选型与绑定（人的工作，不能自动化）
+### D. 选型与绑定（人的工作，不能自动化）
 
 **这一步脚本不替你决定，是刻意的。**
 
@@ -146,7 +131,7 @@ python scripts/schem.py bind netlist.json readback.json -o netlist.bound.json
 {"U3": {"pins": [{"n": "24", "name": "VDD"}, {"n": "23", "name": "VSS"}]}}
 ```
 
-### F. 落笔（`schem.py playbook`）
+### E. 落笔（`schem.py playbook`）
 
 ```bash
 python scripts/schem.py playbook netlist.json --js apply.js
@@ -163,16 +148,15 @@ python scripts/schem.py playbook netlist.json --js apply.js
 
 ---
 
-## 3. 四道门禁（不许跳）
+## 3. 三道门禁（不许跳）
 
 | 门禁 | 在哪一步 | 不过会怎样 |
 |---|---|---|
 | **需求缺口未列清，不许出网表** | A → B | 带着错误假设画完，返工成本 = 重画 |
 | **ERC 有 FAIL，不许落笔** | C → D | 把会烧的电路画进 EDA，后面 PCB 做得再对也是废板 |
-| **审计有 FAIL 或 UNKNOWN，不许落笔** | D → E | 外围漏了、库存没查，落笔只是把问题画得更清楚 |
-| **关键器件没选型，不许落笔** | E → F | 编个料号 → 批量买错料 → 整批报废 |
+| **关键器件没选型，不许落笔** | D → E | 编个料号 → 批量买错料 → 整批报废 |
 
-四道门禁都是 `schem.py` 里写死的返回码（`--strict` 时 WARN 也算不过），不靠自觉。
+三道门禁都是 `schem.py` 里写死的返回码（`--strict` 时 WARN 也算不过），不是靠自觉。
 
 ---
 

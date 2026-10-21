@@ -70,35 +70,6 @@ def part_dims(p: dict, grid: float) -> tuple[float, float]:
     return snap(w, grid), snap(h, grid)
 
 
-def apply_heights(parts: list[dict], heights: dict, stats: dict) -> None:
-    """把实测高度覆盖到器件上，并在器件上留 height_source 记号。
-
-    两趟布局的第二趟：第一趟用 spec 里的估算 h_mm 排完，从 EDA 回读符号真实高度，
-    用 --heights 喂回来重排。EDA 符号高度常与封装名义尺寸不符（尤其是带屏蔽罩、
-    带散热片、带排针座的），只靠估算会在密集区叠件，而这种叠件 check.py 只能事后报。
-    """
-    for p in parts:
-        rec = heights.get(p["designator"])
-        val, src = None, "measured"
-        if isinstance(rec, dict):
-            val = rec.get("h_mm", rec.get("height_mm"))
-            src = rec.get("source") or "measured"
-        elif rec is not None:
-            val = rec
-        try:
-            h = float(val)
-        except (TypeError, ValueError):
-            h = None
-        if h is None or h <= 0:
-            stats["estimated"] += 1
-            stats["missing"].append(p["designator"])
-            p["_h_src"] = "estimated"
-        else:
-            p["h_mm"] = h
-            p["_h_src"] = src
-            stats["measured"] += 1
-
-
 def shelf_pack(parts: list[dict], x0: float, y0: float, width: float, gap: float, grid: float):
     """把一组器件按"高→低、大→小"排成货架，返回 (placements, used_height)。"""
     ordered = sorted(parts, key=lambda p: (-part_dims(p, grid)[1], -part_dims(p, grid)[0], p["designator"]))
@@ -120,7 +91,6 @@ def shelf_pack(parts: list[dict], x0: float, y0: float, width: float, gap: float
             "layer": int(p.get("layer", 1)),
             "block": p.get("_block", ""),
             "fixed": bool(p.get("fixed", False)),
-            "height_source": p.get("_h_src", "estimated"),
         })
         cx += w + gap
         row_h = max(row_h, h)
@@ -155,9 +125,7 @@ def candidate_positions(usable: Rect, step: float, edge: str):
     return sorted(((a, b) for b in ys for a in xs), key=key)
 
 
-def build_plan(spec: dict, heights: dict | None = None) -> dict:
-    heights = heights or {}
-    hstats = {"measured": 0, "estimated": 0, "missing": []}
+def build_plan(spec: dict) -> dict:
     opts = spec.get("options", {})
     grid = float(opts.get("grid_mil", 25))
     edge_band = float(opts.get("edge_band_mil", 80))
@@ -179,8 +147,6 @@ def build_plan(spec: dict, heights: dict | None = None) -> dict:
 
     # 1) 锚点：结构件、连接器、安装孔，位置由人给，直接锁死并当障碍物
     for a in spec.get("anchors", []):
-        if heights.get(a["designator"]) is not None:
-            apply_heights([a], heights, hstats)
         w = snap(mm2mil(float(a["w_mm"])), grid)
         h = snap(mm2mil(float(a["h_mm"])), grid)
         if int(a.get("rotation", 0)) % 180 == 90:
@@ -196,7 +162,7 @@ def build_plan(spec: dict, heights: dict | None = None) -> dict:
             "designator": a["designator"], "x": cx, "y": cy,
             "w": w, "h": h, "rotation": int(a.get("rotation", 0)) % 360,
             "layer": int(a.get("layer", 1)), "block": a.get("block", "anchor"),
-            "fixed": True, "height_source": a.get("_h_src", "given"),
+            "fixed": True,
         })
         obstacles.append(Rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, a["designator"]).inflate(gutter / 2))
 
@@ -205,7 +171,6 @@ def build_plan(spec: dict, heights: dict | None = None) -> dict:
     blocks = []
     for b in spec.get("blocks", []):
         parts = [dict(p, _block=b["name"]) for p in b["parts"]]
-        apply_heights(parts, heights, hstats)
         area = sum(part_dims(p, grid)[0] * part_dims(p, grid)[1] for p in parts) * fill
         widest = max([part_dims(p, grid)[0] for p in parts] + [0])
         inner_w = max(snap(math.sqrt(area * aspect), grid), widest)
@@ -287,14 +252,6 @@ def build_plan(spec: dict, heights: dict | None = None) -> dict:
             "overflow_blocks": [b["block"] for b in block_report if b["overflow"]],
             "out_of_board": out_of_board,
             "anchors_clamped": clamped,
-            "height_source": {
-                "measured": hstats["measured"],
-                "estimated": hstats["estimated"],
-                "estimated_designators": sorted(set(hstats["missing"])),
-                "note": "estimated 表示用的是 spec 里的估算 h_mm。两趟布局：第一趟出计划 → "
-                        "从 EDA 回读符号真实高度 → plan.py --heights 重排第二趟。"
-                        "仍为 estimated 的器件，密集区叠件风险没有排除。",
-            },
         },
     }
 
@@ -349,35 +306,11 @@ def main(argv=None) -> int:
     ap.add_argument("--emit-steps", metavar="FILE", help="另外输出 easyeda apply playbook")
     ap.add_argument("--emit-sh", action="store_true", help="另外输出 shell 命令脚本")
     ap.add_argument("--project", default=None, help="目标工程名（写进 playbook）")
-    ap.add_argument("--heights", metavar="FILE",
-                    help="第二趟：实测高度 JSON {位号: h_mm} 或 {位号: {h_mm, source}}")
-    ap.add_argument("--emit-heights", metavar="FILE",
-                    help="输出待回读高度的清单（第一趟跑完、去 EDA 回读前用）")
     ap.add_argument("--report", action="store_true", help="只打印块占用报告")
     args = ap.parse_args(argv)
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    heights = {}
-    if args.heights:
-        heights = json.loads(Path(args.heights).read_text(encoding="utf-8"))
-        if not isinstance(heights, dict):
-            raise SystemExit(f"{args.heights} 应是 {{位号: 高度}} 或 {{位号: {{h_mm, source}}}} 的对象")
-    plan = build_plan(spec, heights)
-
-    if args.emit_heights:
-        items = [{
-            "designator": c["designator"],
-            "w_mil": c["w"],
-            "h_mil_estimate": c["h"],
-            "height_source": c.get("height_source", "estimated"),
-            "action": "从 EDA 回读符号实际高度，填进 h_mm 后作为 --heights 输入",
-        } for c in plan["components"]]
-        Path(args.emit_heights).write_text(json.dumps({
-            "_note": "第一趟布局后的待回读清单。回读方式：对每个器件取 EDA 符号 bbox 高度，"
-                     "单位换成 mm 后填 h_mm。全部回读完毕再用 plan.py --heights 重排。",
-            "items": items,
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"待回读高度清单已写入 {args.emit_heights}（{len(items)} 颗）")
+    plan = build_plan(spec)
 
     if args.report:
         for b in plan["blocks"]:
@@ -387,13 +320,6 @@ def main(argv=None) -> int:
         s = plan["summary"]
         print(f"\n器件数 {s['count']}，占板面积 {s['area_utilization_pct']}%，"
               f"溢出块 {s['overflow_blocks'] or '无'}")
-        hs = s["height_source"]
-        if hs["estimated"]:
-            print(f"高度：实测 {hs['measured']} / 估算 {hs['estimated']}（估算位号 "
-                  f"{len(hs['estimated_designators'])} 个）—— 叠件风险未排除")
-            print("  → 回读符号真实高度后跑第二趟：plan.py <spec> --heights heights.json")
-        else:
-            print(f"高度：{hs['measured']} 颗全部为实测")
         return 0
 
     Path(args.out).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -405,10 +331,6 @@ def main(argv=None) -> int:
         print("  → 缩小块内器件、减层数、加板面积，或调整 blocks[].priority 后重跑")
     if plan["summary"]["out_of_board"]:
         print(f"⚠ 有器件超出板框（多为锚点坐标给错）：{plan['summary']['out_of_board']}")
-    hs = plan["summary"]["height_source"]
-    if hs["estimated"]:
-        print(f"高度：实测 {hs['measured']} / 估算 {hs['estimated']} —— 第二趟未做，叠件风险未排除")
-        print("  → plan.py <spec> --emit-heights h.json，回读后 --heights h.json 重排")
 
     if args.emit_steps:
         Path(args.emit_steps).write_text(
